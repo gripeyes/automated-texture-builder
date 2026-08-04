@@ -1,0 +1,165 @@
+from __future__ import annotations
+
+from pathlib import Path
+import re
+
+from .model import TextureFile, TextureSet
+
+
+SUPPORTED = {".bmp", ".exr", ".hdr", ".jpeg", ".jpg", ".png", ".tga", ".tif", ".tiff"}
+UDIM_RE = re.compile(r"(?<!\d)(1\d{3})(?!\d)")
+CHANNEL_RE = re.compile(
+    r"(?:^|[_\-.])(?P<channel>"
+    r"base[_ ]?color|albedo|base[_ ]?metalness|metallic|metalness|"
+    r"base[_ ]?weight|diffuse[_ ]?roughness|"
+    r"specular[_ ]?weight|specular[_ ]?level|specularlevel|"
+    r"specular[_ ]?roughness[_ ]?anisotropy|anisotropy|anisotropy[_ ]?level|"
+    r"specular[_ ]?roughness|roughness|specular[_ ]?color|specular[_ ]?ior|"
+    r"transmission[_ ]?scatter[_ ]?anisotropy|transmission[_ ]?scatter|"
+    r"transmission[_ ]?color|transmission[_ ]?depth|transmission[_ ]?weight|translucency|transmission|"
+    r"subsurface[_ ]?scatter[_ ]?anisotropy|subsurface[_ ]?radius[_ ]?scale|"
+    r"subsurface[_ ]?color|subsurface[_ ]?radius|subsurface[_ ]?weight|subsurface|sss|scattering|"
+    r"fuzz[_ ]?color|sheen[_ ]?color|fuzz[_ ]?roughness|sheen[_ ]?roughness|"
+    r"fuzz[_ ]?weight|fuzz|sheen|"
+    r"coat[_ ]?roughness[_ ]?anisotropy|coat[_ ]?color|coat[_ ]?roughness|"
+    r"coat[_ ]?ior|coat[_ ]?darkening|coat[_ ]?weight|clearcoat|coat|"
+    r"thin[_ ]?film[_ ]?weight|thin[_ ]?film[_ ]?thickness|thin[_ ]?film[_ ]?ior|"
+    r"emission[_ ]?luminance|emission[_ ]?color|emissive|emission|opacity|"
+    r"normal(?:[_ ]?(?:opengl|gl))?|height|displacement"
+    r")(?=$|[_\-.])",
+    re.IGNORECASE,
+)
+
+ALIASES = {
+    "basecolor": "base_color",
+    "base_color": "base_color",
+    "albedo": "base_color",
+    "baseweight": "base_weight",
+    "base_weight": "base_weight",
+    "diffuseroughness": "base_diffuse_roughness",
+    "diffuse_roughness": "base_diffuse_roughness",
+    "basemetalness": "base_metalness",
+    "base_metalness": "base_metalness",
+    "metallic": "base_metalness",
+    "metalness": "base_metalness",
+    "specularweight": "specular_weight",
+    "specular_weight": "specular_weight",
+    "specularlevel": "legacy_specular_level",
+    "specular_level": "legacy_specular_level",
+    "specularroughness": "specular_roughness",
+    "specular_roughness": "specular_roughness",
+    "roughness": "specular_roughness",
+    "specularcolor": "specular_color",
+    "specular_color": "specular_color",
+    "specularior": "specular_ior",
+    "specular_ior": "specular_ior",
+    "specularroughnessanisotropy": "specular_roughness_anisotropy",
+    "specular_roughness_anisotropy": "specular_roughness_anisotropy",
+    "anisotropy": "specular_roughness_anisotropy",
+    "anisotropylevel": "specular_roughness_anisotropy",
+    "anisotropy_level": "specular_roughness_anisotropy",
+    "transmission": "transmission_weight",
+    "transmissionweight": "transmission_weight",
+    "transmission_weight": "transmission_weight",
+    "translucency": "transmission_weight",
+    "transmissioncolor": "transmission_color",
+    "transmission_color": "transmission_color",
+    "transmissiondepth": "transmission_depth",
+    "transmission_depth": "transmission_depth",
+    "transmissionscatter": "transmission_scatter",
+    "transmission_scatter": "transmission_scatter",
+    "transmissionscatteranisotropy": "transmission_scatter_anisotropy",
+    "transmission_scatter_anisotropy": "transmission_scatter_anisotropy",
+    "subsurface": "subsurface_weight",
+    "subsurfaceweight": "subsurface_weight",
+    "subsurface_weight": "subsurface_weight",
+    "sss": "subsurface_weight",
+    "scattering": "subsurface_weight",
+    "subsurfacecolor": "subsurface_color",
+    "subsurface_color": "subsurface_color",
+    "subsurfaceradius": "subsurface_radius",
+    "subsurface_radius": "subsurface_radius",
+    "subsurfaceradiusscale": "subsurface_radius_scale",
+    "subsurface_radius_scale": "subsurface_radius_scale",
+    "subsurfacescatteranisotropy": "subsurface_scatter_anisotropy",
+    "subsurface_scatter_anisotropy": "subsurface_scatter_anisotropy",
+    "fuzz": "fuzz_weight", "fuzzweight": "fuzz_weight", "fuzz_weight": "fuzz_weight",
+    "sheen": "fuzz_weight",
+    "fuzzcolor": "fuzz_color", "fuzz_color": "fuzz_color",
+    "sheencolor": "fuzz_color", "sheen_color": "fuzz_color",
+    "fuzzroughness": "fuzz_roughness", "fuzz_roughness": "fuzz_roughness",
+    "sheenroughness": "fuzz_roughness", "sheen_roughness": "fuzz_roughness",
+    "coat": "coat_weight", "coatweight": "coat_weight", "coat_weight": "coat_weight",
+    "clearcoat": "coat_weight",
+    "coatcolor": "coat_color", "coat_color": "coat_color",
+    "coatroughness": "coat_roughness", "coat_roughness": "coat_roughness",
+    "coatroughnessanisotropy": "coat_roughness_anisotropy",
+    "coat_roughness_anisotropy": "coat_roughness_anisotropy",
+    "coatior": "coat_ior", "coat_ior": "coat_ior",
+    "coatdarkening": "coat_darkening", "coat_darkening": "coat_darkening",
+    "thinfilmweight": "thin_film_weight", "thin_film_weight": "thin_film_weight",
+    "thinfilmthickness": "thin_film_thickness", "thin_film_thickness": "thin_film_thickness",
+    "thinfilmior": "thin_film_ior", "thin_film_ior": "thin_film_ior",
+    "emissionluminance": "emission_luminance", "emission_luminance": "emission_luminance",
+    "emissioncolor": "emission_color", "emission_color": "emission_color",
+    "emission": "emission_color", "emissive": "emission_color",
+    "opacity": "opacity",
+    "normal": "normal",
+    "normalopengl": "normal",
+    "normal_opengl": "normal",
+    "normalgl": "normal",
+    "normal_gl": "normal",
+    "height": "height",
+    "displacement": "height",
+}
+
+
+def _canonical(value: str) -> str:
+    return ALIASES[value.lower().replace(" ", "_")]
+
+
+def parse_texture(path: Path) -> TextureFile | None:
+    matches = list(CHANNEL_RE.finditer(path.stem))
+    if not matches:
+        return None
+    match = matches[-1]
+    channel = _canonical(match.group("channel"))
+    texture_set = path.stem[: match.start()].rstrip("_.-") or "material"
+    udims = list(UDIM_RE.finditer(path.stem))
+    udim = int(udims[-1].group(1)) if udims else None
+    return TextureFile(path.resolve(), texture_set, channel, udim)
+
+
+def scan(
+    root: Path,
+    output_root: Path | None = None,
+    extensions: set[str] | None = None,
+) -> dict[str, TextureSet]:
+    root = root.expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"Texture folder does not exist: {root}")
+    output_root = output_root.resolve() if output_root else None
+    extensions = extensions or SUPPORTED
+    sets: dict[str, TextureSet] = {}
+    for path in sorted(root.rglob("*"), key=lambda p: p.as_posix().casefold()):
+        if not path.is_file() or path.name.startswith(".") or path.suffix.lower() not in extensions:
+            continue
+        if output_root and (path == output_root or output_root in path.parents):
+            continue
+        texture = parse_texture(path)
+        if texture:
+            sets.setdefault(texture.texture_set, TextureSet(texture.texture_set)).add(texture)
+    if not sets:
+        raise ValueError(f"No recognized material textures found under {root}")
+    for item in sets.values():
+        for textures in item.maps.values():
+            textures.sort(key=lambda t: (t.udim or 0, t.source.name.casefold()))
+    return sets
+
+
+def udim_pattern(textures: list[TextureFile], use_output: bool = True) -> str:
+    texture = textures[0]
+    path = texture.output if use_output and texture.output else texture.source
+    if texture.udim is None:
+        return str(path)
+    return UDIM_RE.sub("<UDIM>", str(path), count=1)

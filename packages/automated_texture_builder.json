@@ -1,0 +1,8 @@
+{
+  "enable": true,
+  "env": [
+    { "AUTOMATED_TEXTURE_BUILDER_ROOT": "/Users/j7s/coding/automated-texture-builder" },
+    { "PYTHONPATH": "$AUTOMATED_TEXTURE_BUILDER_ROOT/python" },
+    { "HOUDINI_OTLSCAN_PATH": "$AUTOMATED_TEXTURE_BUILDER_ROOT/otls;&" }
+  ]
+}
