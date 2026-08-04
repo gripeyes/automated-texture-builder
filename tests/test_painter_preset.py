@@ -21,6 +21,14 @@ class PainterPresetTests(unittest.TestCase):
         self.assertNotIn(b"_Emissive(", data)
         self.assertEqual(len(PRESET.segments(data)), 7)
 
+    def test_all_outputs_are_half_float_exr(self):
+        path = ROOT / "presets" / "Automated Texture Builder - Rec2020 TX Pipeline.spexp"
+        data = path.read_bytes()
+        for start, end in PRESET.segments(data):
+            output = data[start:end]
+            self.assertIn(b"fileformat\x10\x03\x00\x00\x00exr", output)
+            self.assertIn(b"bitdepth\x09\x02\x00\x00\x00\x00\x00\x00\x00", output)
+
 
 if __name__ == "__main__":
     unittest.main()

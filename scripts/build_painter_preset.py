@@ -15,6 +15,8 @@ SOURCE_DEFAULT = Path(
 ROUGHNESS_ID = bytes.fromhex("000000030000000080")
 SPECULAR_WEIGHT_ID = bytes.fromhex("000000030000010000")  # ChannelType value 16
 ANISOTROPY_ID = bytes.fromhex("000000030000000100")  # ChannelType value 8
+VFX_FILE_FORMAT = b"exr"
+VFX_BIT_DEPTH = 2  # Painter's 16-bit floating-point export enum
 
 
 def u32(data: bytes | bytearray, offset: int) -> int:
@@ -97,6 +99,30 @@ def replace_path(segment: bytearray, old: bytes, new: bytes) -> bytearray:
     return segment
 
 
+def set_output_encoding(
+    segment: bytearray,
+    file_format: bytes = VFX_FILE_FORMAT,
+    bit_depth: int = VFX_BIT_DEPTH,
+) -> None:
+    """Set an output map to the house VFX encoding without changing its size."""
+    bit_marker = b"\x08\x00\x00\x00bitdepth\x09"
+    bit_at = segment.find(bit_marker)
+    if bit_at < 0:
+        raise ValueError("Output bit-depth field was not found")
+    struct.pack_into("<Q", segment, bit_at + len(bit_marker), bit_depth)
+
+    format_marker = b"\x0a\x00\x00\x00fileformat\x10"
+    format_at = segment.find(format_marker)
+    if format_at < 0:
+        raise ValueError("Output file-format field was not found")
+    length_at = format_at + len(format_marker)
+    old_length = u32(segment, length_at)
+    if len(file_format) != old_length:
+        raise ValueError("Replacement format must preserve the serialized field size")
+    value_at = length_at + 4
+    segment[value_at : value_at + old_length] = file_format
+
+
 def build(source: bytes) -> bytes:
     original_segments = segments(source)
     rough = next(bounds for bounds in original_segments if b"_Roughness(" in source[bounds[0] : bounds[1]])
@@ -132,6 +158,15 @@ def build(source: bytes) -> bytes:
     tag, _, new_count_offset, _ = array_info(prefix)
     put_u32(prefix, tag + 1, len(prefix) - len(source[old_array_end:]))
     put_u32(prefix, new_count_offset, old_count)  # - emission + anisotropy = unchanged
+
+    # Painter's source preset mixes 8-bit TIFF and 16-bit outputs. Normalize all
+    # material maps to half-float EXR: enough precision for Painter's 16-bit
+    # channels, no 8-bit specular stepping, and one predictable VFX container.
+    for start, end in segments(prefix):
+        output = bytearray(prefix[start:end])
+        set_output_encoding(output)
+        prefix[start:end] = output
+
     parsed = segments(prefix)
     if len(parsed) != old_count:
         raise ValueError("Generated preset did not validate")

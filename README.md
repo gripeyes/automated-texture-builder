@@ -102,6 +102,13 @@ SpecularRoughnessAnisotropy, Normal OpenGL, and Height. Painter can display
 shorter filenames such as `Metalness`, `Roughness`, and `Anisotropy`; the tool
 accepts both spellings.
 
+All seven maps export as 16-bit half-float OpenEXR. This preserves Painter's
+available channel precision, avoids 8-bit stepping in smooth roughness and
+specular controls, and gives the TX conversion one consistent VFX source
+format. For a separately authored hero displacement that genuinely contains
+32-bit source precision, override only Height to 32-bit float EXR in Painter;
+raising a 16-bit-baked map to 32-bit does not reconstruct lost precision.
+
 ## Command line
 
 Run using Houdini's Python environment so PyOpenColorIO is available:
