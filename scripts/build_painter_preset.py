@@ -17,6 +17,7 @@ SPECULAR_WEIGHT_ID = bytes.fromhex("000000030000010000")  # ChannelType value 16
 ANISOTROPY_ID = bytes.fromhex("000000030000000100")  # ChannelType value 8
 VFX_FILE_FORMAT = b"exr"
 VFX_BIT_DEPTH = 2  # Painter's 16-bit floating-point export enum
+VFX_DISPLACEMENT_BIT_DEPTH = 3  # Painter's 32-bit floating-point export enum
 
 
 def u32(data: bytes | bytearray, offset: int) -> int:
@@ -159,12 +160,12 @@ def build(source: bytes) -> bytes:
     put_u32(prefix, tag + 1, len(prefix) - len(source[old_array_end:]))
     put_u32(prefix, new_count_offset, old_count)  # - emission + anisotropy = unchanged
 
-    # Painter's source preset mixes 8-bit TIFF and 16-bit outputs. Normalize all
-    # material maps to half-float EXR: enough precision for Painter's 16-bit
-    # channels, no 8-bit specular stepping, and one predictable VFX container.
+    # Painter's source preset mixes 8-bit TIFF and 16-bit outputs. Normalize the
+    # material maps to EXR, reserving full float for height/displacement.
     for start, end in segments(prefix):
         output = bytearray(prefix[start:end])
-        set_output_encoding(output)
+        bit_depth = VFX_DISPLACEMENT_BIT_DEPTH if b"_Height(" in output else VFX_BIT_DEPTH
+        set_output_encoding(output, bit_depth=bit_depth)
         prefix[start:end] = output
 
     parsed = segments(prefix)
