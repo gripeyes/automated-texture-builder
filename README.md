@@ -80,9 +80,21 @@ profiles. Builder choices include USD MaterialX, Karma, USD MaterialX (Arnold),
 native Arnold Material Builder, and MoonRay DwaBase. The MoonRay profile follows
 the verified `tallsculpt_textured_moonray_uv_fixed-2.hiplc` topology: metalness
 and roughness connect directly from ImageMap without scalar conversion nodes.
-Optional maps include transmission/translucency,
-subsurface, fuzz/sheen, coat, thin-film, opacity and emission, in addition to
-the core PBR maps.
+The OpenPBR profile recognizes and connects the complete practical OpenPBR 1.1
+texture set, not just the bundled preset's core maps. This includes base and
+specular controls; transmission color, depth, scattering and dispersion;
+thin-walled translucency; subsurface color, radius and anisotropy; fuzz; coat
+color, roughness, anisotropy and coat normal; thin film; opacity; emission; and
+explicit or angle-driven surface/coat tangents. Both the formal OpenPBR names
+and Painter/legacy aliases such as `Metalness`, `Roughness`, `Anisotropy`,
+`Sheen`, and `Translucency` are accepted.
+
+OpenPBR MaterialX is the lossless target for this full parameter set. MaterialX
+Standard Surface, native Arnold Standard Surface, and MoonRay DwaBase receive
+the closest supported equivalents where their shader models differ. The tool
+does not multiply ambient occlusion into base color: AO is a mesh/lighting map,
+not an OpenPBR Surface input, and baking it into the shader would double the
+effect in a path tracer.
 
 Automatic assignment is off by default. When enabled, it prefers an exact mesh-name match,
 then compares meaningful partial name tokens longest-first against USD Mesh and
@@ -101,6 +113,12 @@ BaseMetalness, SpecularWeight, SpecularRoughness,
 SpecularRoughnessAnisotropy, Normal OpenGL, and Height. Painter can display
 shorter filenames such as `Metalness`, `Roughness`, and `Anisotropy`; the tool
 accepts both spellings.
+
+The bundled preset is deliberately a compact hero-material default. If extra
+OpenPBR channels are added to a Painter texture set and exported by an extended
+or custom output template, the Houdini tool discovers and wires them without a
+code change. Painter only writes channels that are present in the chosen export
+template.
 
 BaseColor, Metalness, Roughness, Normal, SpecularWeight, and Anisotropy export
 as 16-bit half-float OpenEXR. Height exports as 32-bit float OpenEXR for the

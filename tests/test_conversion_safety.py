@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from automated_texture_builder.conversion import (
+    COLOR_CHANNELS,
     delete_original_sources,
     delete_sources_for_existing_tx,
     maketx_storage_args,
@@ -12,6 +13,12 @@ from automated_texture_builder.conversion import (
 
 
 class ConversionSafetyTests(unittest.TestCase):
+    def test_openpbr_color_and_data_channels_are_distinct(self):
+        self.assertIn("translucency_color", COLOR_CHANNELS)
+        self.assertIn("emission_color", COLOR_CHANNELS)
+        self.assertNotIn("subsurface_radius_scale", COLOR_CHANNELS)
+        self.assertNotIn("coat_normal", COLOR_CHANNELS)
+
     def test_maketx_preserves_source_precision_for_height(self):
         self.assertEqual(
             maketx_storage_args("height", Path("hero_Height.exr")),

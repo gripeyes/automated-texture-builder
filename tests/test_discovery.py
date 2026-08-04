@@ -45,12 +45,26 @@ class DiscoveryTests(unittest.TestCase):
     def test_extended_material_channels(self):
         cases = {
             "hero_TransmissionColor_Linear Rec.2020.1001.exr": "transmission_color",
+            "hero_BaseDiffuseRoughness_Raw.1001.exr": "base_diffuse_roughness",
             "hero_Transmission_Raw.1001.tif": "transmission_weight",
+            "hero_TransmissionDispersionScale_Raw.1001.exr": "transmission_dispersion_scale",
+            "hero_TransmissionDispersionAbbeNumber_Raw.1001.exr": "transmission_dispersion_abbe_number",
+            "hero_Translucency_Raw.1001.exr": "translucency_weight",
+            "hero_TranslucencyColor_Linear Rec.2020.1001.exr": "translucency_color",
             "hero_SubsurfaceColor_Linear Rec.2020.1001.exr": "subsurface_color",
             "hero_SubsurfaceRadius_Raw.1001.exr": "subsurface_radius",
+            "hero_SubsurfaceRadiusScale_Raw.1001.exr": "subsurface_radius_scale",
             "hero_FuzzRoughness_Raw.1001.tif": "fuzz_roughness",
             "hero_CoatRoughness_Raw.1001.tif": "coat_roughness",
+            "hero_CoatNormal_Raw.1001.exr": "coat_normal",
+            "hero_CoatTangent_Raw.1001.exr": "coat_tangent",
+            "hero_Tangent_Raw.1001.exr": "tangent",
+            "hero_SpecularAnisotropy_Raw.1001.exr": "specular_roughness_anisotropy",
+            "hero_CoatAnisotropy_Raw.1001.exr": "coat_roughness_anisotropy",
+            "hero_AnisotropyAngle_Raw.1001.exr": "specular_anisotropy_angle",
+            "hero_CoatAnisotropyAngle_Raw.1001.exr": "coat_anisotropy_angle",
             "hero_ThinFilmThickness_Raw.1001.exr": "thin_film_thickness",
+            "hero_ThinWalled_Raw.1001.exr": "thin_walled",
             "hero_Opacity_Raw.1001.tif": "opacity",
         }
         for name, expected in cases.items():

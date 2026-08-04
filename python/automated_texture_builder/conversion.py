@@ -16,7 +16,8 @@ from .model import TextureFile, TextureSet
 
 COLOR_CHANNELS = {
     "base_color", "specular_color", "transmission_color", "transmission_scatter",
-    "subsurface_color", "fuzz_color", "coat_color", "emission_color",
+    "translucency_color", "subsurface_color", "fuzz_color", "coat_color",
+    "emission_color",
 }
 
 

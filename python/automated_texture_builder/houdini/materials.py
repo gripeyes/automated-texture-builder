@@ -23,10 +23,14 @@ OPENPBR_INPUTS = {
     "transmission_depth": ("transmission_depth", "float"),
     "transmission_scatter": ("transmission_scatter", "color3"),
     "transmission_scatter_anisotropy": ("transmission_scatter_anisotropy", "float"),
+    "transmission_dispersion_scale": ("transmission_dispersion_scale", "float"),
+    "transmission_dispersion_abbe_number": ("transmission_dispersion_abbe_number", "float"),
+    "translucency_weight": ("subsurface_weight", "float"),
+    "translucency_color": ("subsurface_color", "color3"),
     "subsurface_weight": ("subsurface_weight", "float"),
     "subsurface_color": ("subsurface_color", "color3"),
-    "subsurface_radius": ("subsurface_radius", "color3"),
-    "subsurface_radius_scale": ("subsurface_radius_scale", "float"),
+    "subsurface_radius": ("subsurface_radius", "float"),
+    "subsurface_radius_scale": ("subsurface_radius_scale", "color3"),
     "subsurface_scatter_anisotropy": ("subsurface_scatter_anisotropy", "float"),
     "fuzz_weight": ("fuzz_weight", "float"),
     "fuzz_color": ("fuzz_color", "color3"),
@@ -42,13 +46,15 @@ OPENPBR_INPUTS = {
     "thin_film_ior": ("thin_film_ior", "float"),
     "emission_luminance": ("emission_luminance", "float"),
     "emission_color": ("emission_color", "color3"),
-    "opacity": ("geometry_opacity", "color3"),
+    "opacity": ("geometry_opacity", "float"),
 }
 
 STANDARD_INPUTS = {
     **{key: value for key, value in OPENPBR_INPUTS.items() if key not in {
         "base_weight", "base_diffuse_roughness", "base_metalness", "specular_weight",
         "specular_ior", "specular_roughness_anisotropy", "transmission_weight",
+        "transmission_dispersion_scale", "transmission_dispersion_abbe_number",
+        "translucency_weight", "translucency_color",
         "subsurface_weight", "subsurface_radius_scale", "subsurface_scatter_anisotropy",
         "fuzz_weight", "fuzz_color", "fuzz_roughness", "coat_weight",
         "coat_roughness_anisotropy", "coat_ior", "coat_darkening", "thin_film_weight",
@@ -60,15 +66,21 @@ STANDARD_INPUTS = {
     "specular_weight": ("specular", "float"),
     "specular_ior": ("specular_IOR", "float"),
     "specular_roughness_anisotropy": ("specular_anisotropy", "float"),
+    "specular_anisotropy_angle": ("specular_rotation", "float"),
     "transmission_weight": ("transmission", "float"),
+    "transmission_dispersion_scale": ("transmission_dispersion", "float"),
+    "translucency_weight": ("subsurface", "float"),
+    "translucency_color": ("subsurface_color", "color3"),
     "subsurface_weight": ("subsurface", "float"),
-    "subsurface_radius_scale": ("subsurface_scale", "float"),
+    "subsurface_radius": ("subsurface_scale", "float"),
+    "subsurface_radius_scale": ("subsurface_radius", "color3"),
     "subsurface_scatter_anisotropy": ("subsurface_anisotropy", "float"),
     "fuzz_weight": ("sheen", "float"),
     "fuzz_color": ("sheen_color", "color3"),
     "fuzz_roughness": ("sheen_roughness", "float"),
     "coat_weight": ("coat", "float"),
     "coat_roughness_anisotropy": ("coat_anisotropy", "float"),
+    "coat_anisotropy_angle": ("coat_rotation", "float"),
     "coat_ior": ("coat_IOR", "float"),
     "thin_film_thickness": ("thin_film_thickness", "float"),
     "thin_film_ior": ("thin_film_IOR", "float"),
@@ -161,6 +173,33 @@ def _uv_transform_node(builder: hou.Node, uv: hou.Node) -> hou.Node:
     return transform
 
 
+def _angle_to_tangent(builder: hou.Node, angle: hou.Node, name: str) -> hou.Node:
+    """Convert Painter's normalized anisotropy angle into a tangent vector."""
+    radians = builder.createNode("mtlxmultiply", name + "_radians")
+    radians.parm("signature").set("float")
+    radians.parm("in2").set(6.283185307179586)
+    _connect(radians, "in1", angle)
+    cosine = builder.createNode("mtlxcos", name + "_cos")
+    sine = builder.createNode("mtlxsin", name + "_sin")
+    _connect(cosine, "in", radians)
+    _connect(sine, "in", radians)
+    tangent = builder.createNode("mtlxtangent", name + "_basis_u")
+    bitangent = builder.createNode("mtlxbitangent", name + "_basis_v")
+    tangent_weighted = builder.createNode("mtlxmultiply", name + "_tangent_u")
+    tangent_weighted.parm("signature").set("vector3FA")
+    _connect(tangent_weighted, "in1", tangent)
+    _connect(tangent_weighted, "in2", cosine)
+    bitangent_weighted = builder.createNode("mtlxmultiply", name + "_tangent_v")
+    bitangent_weighted.parm("signature").set("vector3FA")
+    _connect(bitangent_weighted, "in1", bitangent)
+    _connect(bitangent_weighted, "in2", sine)
+    result = builder.createNode("mtlxadd", name + "_tangent")
+    result.parm("signature").set("vector3")
+    _connect(result, "in1", tangent_weighted)
+    _connect(result, "in2", bitangent_weighted)
+    return result
+
+
 def clear_generated(library: hou.Node) -> None:
     for child in list(library.children()):
         if child.userData("automated_texture_builder") == "1":
@@ -210,15 +249,19 @@ def _build_arnold_native(
         "specular_roughness": ("specular_roughness", "r"),
         "specular_ior": ("specular_IOR", "r"),
         "specular_roughness_anisotropy": ("specular_anisotropy", "r"),
+        "specular_anisotropy_angle": ("specular_rotation", "r"),
         "transmission_weight": ("transmission", "r"),
         "transmission_color": ("transmission_color", "rgba"),
         "transmission_depth": ("transmission_depth", "r"),
         "transmission_scatter": ("transmission_scatter", "rgba"),
         "transmission_scatter_anisotropy": ("transmission_scatter_anisotropy", "r"),
+        "transmission_dispersion_scale": ("transmission_dispersion", "r"),
+        "translucency_weight": ("subsurface", "r"),
+        "translucency_color": ("subsurface_color", "rgba"),
         "subsurface_weight": ("subsurface", "r"),
         "subsurface_color": ("subsurface_color", "rgba"),
-        "subsurface_radius": ("subsurface_radius", "rgba"),
-        "subsurface_radius_scale": ("subsurface_scale", "r"),
+        "subsurface_radius": ("subsurface_scale", "r"),
+        "subsurface_radius_scale": ("subsurface_radius", "rgba"),
         "subsurface_scatter_anisotropy": ("subsurface_anisotropy", "r"),
         "fuzz_weight": ("sheen", "r"),
         "fuzz_color": ("sheen_color", "rgba"),
@@ -227,6 +270,7 @@ def _build_arnold_native(
         "coat_color": ("coat_color", "rgba"),
         "coat_roughness": ("coat_roughness", "r"),
         "coat_roughness_anisotropy": ("coat_anisotropy", "r"),
+        "coat_anisotropy_angle": ("coat_rotation", "r"),
         "coat_ior": ("coat_IOR", "r"),
         "thin_film_thickness": ("thin_film_thickness", "r"),
         "thin_film_ior": ("thin_film_IOR", "r"),
@@ -249,6 +293,10 @@ def _build_arnold_native(
             image = _arnold_image(builder, channel, maps[channel], texture_mode)
             image.setPosition(hou.Vector2(-4.5, 5.0 - offset * 1.0))
             _connect_output(surface, input_name, image, output_name)
+        if "thin_walled" in maps or "translucency_weight" in maps or "translucency_color" in maps:
+            parm = surface.parm("thin_walled")
+            if parm is not None:
+                parm.set(1)
         if "normal" in maps:
             image = _arnold_image(builder, "normal_image", maps["normal"], texture_mode)
             image.parm("color_space").set("Raw")
@@ -256,6 +304,12 @@ def _build_arnold_native(
             _connect_output(normal, "input", image, "rgba")
             _connect(surface, "normal", normal)
             normal_node = normal
+        if "coat_normal" in maps and "coat_normal" in surface.inputNames():
+            image = _arnold_image(builder, "coat_normal_image", maps["coat_normal"], texture_mode)
+            image.parm("color_space").set("Raw")
+            coat_normal = builder.createNode("arnold::normal_map", "coat_normal")
+            _connect_output(coat_normal, "input", image, "rgba")
+            _connect(surface, "coat_normal", coat_normal)
         if "height" in maps:
             image = _arnold_image(builder, "height", maps["height"], texture_mode)
             image.parm("color_space").set("Raw")
@@ -325,17 +379,31 @@ def _build_moonray(
     clear_generated(library)
     material_paths: dict[str, str] = {}
     scalar_mapping = {
+        "base_diffuse_roughness": "diffuse_roughness",
         "base_metalness": "metallic",
         "specular_weight": "specular",
         "specular_roughness": "roughness",
+        "specular_ior": "refractive_index",
         "specular_roughness_anisotropy": "anisotropy",
         "transmission_weight": "transmission",
+        "transmission_dispersion_abbe_number": "dispersion_abbe_number",
+        "translucency_weight": "diffuse_transmission",
+        "subsurface_radius": "scattering_radius",
         "fuzz_weight": "fuzz",
+        "fuzz_roughness": "fuzz_roughness",
         "coat_weight": "clearcoat",
+        "coat_roughness": "clearcoat_roughness",
+        "coat_ior": "clearcoat_refractive_index",
+        "thin_film_weight": "iridescence",
+        "thin_film_thickness": "iridescence_thickness",
         "opacity": "presence",
     }
     color_mapping = {
         "transmission_color": "transmission_color",
+        "translucency_color": "diffuse_transmission_color",
+        "subsurface_color": "scattering_color",
+        "fuzz_color": "fuzz_albedo",
+        "coat_color": "clearcoat_attenuation_color",
         "emission_color": "emission",
     }
     for index, texture_set in enumerate(data["texture_sets"]):
@@ -356,6 +424,10 @@ def _build_moonray(
                 image = _moonray_image(builder, channel + "_image", maps[channel], texture_mode)
                 # Direct Map-to-float connections match the verified fixed scene.
                 _connect(surface, input_name, image)
+        if "transmission_dispersion_abbe_number" in maps:
+            surface.parm("use_dispersion").set(1)
+        if "thin_walled" in maps or "translucency_weight" in maps or "translucency_color" in maps:
+            surface.parm("thin_geometry").set(1)
         for channel, input_name in color_mapping.items():
             if channel in maps:
                 image = _moonray_image(builder, channel + "_image", maps[channel], texture_mode)
@@ -364,7 +436,7 @@ def _build_moonray(
             normal = builder.createNode(MOONRAY_TYPES["normal"], "normal")
             normal.parm("tangent_space_normal_texture").set(maps["normal"]["path"])
             normal.parm("normal_encoding").set("[0,1]")
-            normal.parm("wrap_around").set(1)
+            normal.parm("wrap_around").set(1 if texture_mode == "repeat" else 0)
             _connect(surface, "input_normal", normal)
         if "height" in maps:
             height_image = _moonray_image(builder, "height_image", maps["height"], texture_mode)
@@ -430,6 +502,45 @@ def build_materials(
             )
             image.setPosition(hou.Vector2(-4.5, 5.0 - offset * 1.1))
             _connect(surface, input_name, image)
+        if surface_model == "openpbr":
+            for channel, input_name in (
+                ("tangent", "geometry_tangent"),
+                ("coat_tangent", "geometry_coat_tangent"),
+            ):
+                if channel not in maps:
+                    continue
+                tangent = _image(
+                    builder, channel, maps[channel]["path"], "vector3", uv,
+                    texture_mode, "Raw", uv_transform,
+                )
+                _connect(surface, input_name, tangent)
+            for channel, input_name in (
+                ("specular_anisotropy_angle", "geometry_tangent"),
+                ("coat_anisotropy_angle", "geometry_coat_tangent"),
+            ):
+                explicit_tangent = "tangent" if channel == "specular_anisotropy_angle" else "coat_tangent"
+                if channel not in maps or explicit_tangent in maps:
+                    continue
+                angle = _image(
+                    builder, channel, maps[channel]["path"], "float", uv,
+                    texture_mode, "Raw", uv_transform,
+                )
+                _connect(surface, input_name, _angle_to_tangent(builder, angle, channel))
+        thin_walled_input = "geometry_thin_walled" if surface_model == "openpbr" else "thin_walled"
+        if "thin_walled" in maps:
+            mask = _image(
+                builder, "thin_walled", maps["thin_walled"]["path"], "float",
+                uv, texture_mode, "Raw", uv_transform,
+            )
+            compare = builder.createNode("mtlxcompare", "thin_walled_threshold")
+            compare.parm("test").set(3)  # greater than
+            compare.parm("input2").set(0.5)
+            _connect(compare, "input1", mask)
+            _connect(surface, thin_walled_input, compare)
+        elif "translucency_weight" in maps or "translucency_color" in maps:
+            parm = surface.parm(thin_walled_input)
+            if parm is not None:
+                parm.set(1)
         if "legacy_specular_level" in maps and "specular_weight" not in maps:
             surface.setComment(
                 "Legacy SpecularLevel was not connected. Export OpenPBR SpecularWeight instead."
@@ -444,6 +555,14 @@ def build_materials(
             normal.setPosition(hou.Vector2(-1.5, -3.0))
             _connect(normal, "in", image)
             _connect(surface, "geometry_normal" if surface_model == "openpbr" else "normal", normal)
+        if "coat_normal" in maps:
+            image = _image(
+                builder, "coat_normal_image", maps["coat_normal"]["path"], "vector3",
+                uv, texture_mode, "Raw", uv_transform,
+            )
+            normal = builder.createNode("mtlxnormalmap", "coat_normal")
+            _connect(normal, "in", image)
+            _connect(surface, "geometry_coat_normal" if surface_model == "openpbr" else "coat_normal", normal)
         if "height" in maps:
             height = _image(
                 builder, "height", maps["height"]["path"], "float",

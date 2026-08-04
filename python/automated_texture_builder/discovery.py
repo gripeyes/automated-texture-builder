@@ -11,21 +11,28 @@ UDIM_RE = re.compile(r"(?<!\d)(1\d{3})(?!\d)")
 CHANNEL_RE = re.compile(
     r"(?:^|[_\-.])(?P<channel>"
     r"base[_ ]?color|albedo|base[_ ]?metalness|metallic|metalness|"
-    r"base[_ ]?weight|diffuse[_ ]?roughness|"
+    r"base[_ ]?weight|base[_ ]?diffuse[_ ]?roughness|diffuse[_ ]?roughness|"
     r"specular[_ ]?weight|specular[_ ]?level|specularlevel|"
-    r"specular[_ ]?roughness[_ ]?anisotropy|anisotropy|anisotropy[_ ]?level|"
+    r"specular[_ ]?roughness[_ ]?anisotropy|specular[_ ]?anisotropy[_ ]?angle|"
+    r"specular[_ ]?anisotropy|"
+    r"anisotropy[_ ]?angle|anisotropy|anisotropy[_ ]?level|"
     r"specular[_ ]?roughness|roughness|specular[_ ]?color|specular[_ ]?ior|"
+    r"transmission[_ ]?dispersion[_ ]?abbe[_ ]?number|transmission[_ ]?dispersion[_ ]?scale|"
     r"transmission[_ ]?scatter[_ ]?anisotropy|transmission[_ ]?scatter|"
-    r"transmission[_ ]?color|transmission[_ ]?depth|transmission[_ ]?weight|translucency|transmission|"
+    r"transmission[_ ]?color|transmission[_ ]?depth|transmission[_ ]?weight|"
+    r"translucency[_ ]?color|translucency[_ ]?weight|translucency|transmission|"
     r"subsurface[_ ]?scatter[_ ]?anisotropy|subsurface[_ ]?radius[_ ]?scale|"
     r"subsurface[_ ]?color|subsurface[_ ]?radius|subsurface[_ ]?weight|subsurface|sss|scattering|"
     r"fuzz[_ ]?color|sheen[_ ]?color|fuzz[_ ]?roughness|sheen[_ ]?roughness|"
     r"fuzz[_ ]?weight|fuzz|sheen|"
-    r"coat[_ ]?roughness[_ ]?anisotropy|coat[_ ]?color|coat[_ ]?roughness|"
+    r"coat[_ ]?roughness[_ ]?anisotropy|coat[_ ]?anisotropy[_ ]?angle|coat[_ ]?anisotropy|"
+    r"coat[_ ]?normal|coat[_ ]?tangent|"
+    r"coat[_ ]?color|coat[_ ]?roughness|"
     r"coat[_ ]?ior|coat[_ ]?darkening|coat[_ ]?weight|clearcoat|coat|"
     r"thin[_ ]?film[_ ]?weight|thin[_ ]?film[_ ]?thickness|thin[_ ]?film[_ ]?ior|"
-    r"emission[_ ]?luminance|emission[_ ]?color|emissive|emission|opacity|"
-    r"normal(?:[_ ]?(?:opengl|gl))?|height|displacement"
+    r"emission[_ ]?luminance|emission[_ ]?weight|emission[_ ]?color|emissive|emission|"
+    r"geometry[_ ]?opacity|geometry[_ ]?thin[_ ]?walled|thin[_ ]?walled|opacity|"
+    r"normal(?:[_ ]?(?:opengl|gl))?|geometry[_ ]?tangent|tangent|height|displacement"
     r")(?=$|[_\-.])",
     re.IGNORECASE,
 )
@@ -38,6 +45,8 @@ ALIASES = {
     "base_weight": "base_weight",
     "diffuseroughness": "base_diffuse_roughness",
     "diffuse_roughness": "base_diffuse_roughness",
+    "basediffuseroughness": "base_diffuse_roughness",
+    "base_diffuse_roughness": "base_diffuse_roughness",
     "basemetalness": "base_metalness",
     "base_metalness": "base_metalness",
     "metallic": "base_metalness",
@@ -55,13 +64,23 @@ ALIASES = {
     "specular_ior": "specular_ior",
     "specularroughnessanisotropy": "specular_roughness_anisotropy",
     "specular_roughness_anisotropy": "specular_roughness_anisotropy",
+    "specularanisotropy": "specular_roughness_anisotropy",
+    "specular_anisotropy": "specular_roughness_anisotropy",
     "anisotropy": "specular_roughness_anisotropy",
     "anisotropylevel": "specular_roughness_anisotropy",
     "anisotropy_level": "specular_roughness_anisotropy",
+    "specularanisotropyangle": "specular_anisotropy_angle",
+    "specular_anisotropy_angle": "specular_anisotropy_angle",
+    "anisotropyangle": "specular_anisotropy_angle",
+    "anisotropy_angle": "specular_anisotropy_angle",
     "transmission": "transmission_weight",
     "transmissionweight": "transmission_weight",
     "transmission_weight": "transmission_weight",
-    "translucency": "transmission_weight",
+    "translucency": "translucency_weight",
+    "translucencyweight": "translucency_weight",
+    "translucency_weight": "translucency_weight",
+    "translucencycolor": "translucency_color",
+    "translucency_color": "translucency_color",
     "transmissioncolor": "transmission_color",
     "transmission_color": "transmission_color",
     "transmissiondepth": "transmission_depth",
@@ -70,6 +89,10 @@ ALIASES = {
     "transmission_scatter": "transmission_scatter",
     "transmissionscatteranisotropy": "transmission_scatter_anisotropy",
     "transmission_scatter_anisotropy": "transmission_scatter_anisotropy",
+    "transmissiondispersionscale": "transmission_dispersion_scale",
+    "transmission_dispersion_scale": "transmission_dispersion_scale",
+    "transmissiondispersionabbenumber": "transmission_dispersion_abbe_number",
+    "transmission_dispersion_abbe_number": "transmission_dispersion_abbe_number",
     "subsurface": "subsurface_weight",
     "subsurfaceweight": "subsurface_weight",
     "subsurface_weight": "subsurface_weight",
@@ -95,20 +118,30 @@ ALIASES = {
     "coatroughness": "coat_roughness", "coat_roughness": "coat_roughness",
     "coatroughnessanisotropy": "coat_roughness_anisotropy",
     "coat_roughness_anisotropy": "coat_roughness_anisotropy",
+    "coatanisotropy": "coat_roughness_anisotropy",
+    "coat_anisotropy": "coat_roughness_anisotropy",
+    "coatanisotropyangle": "coat_anisotropy_angle",
+    "coat_anisotropy_angle": "coat_anisotropy_angle",
+    "coatnormal": "coat_normal", "coat_normal": "coat_normal",
+    "coattangent": "coat_tangent", "coat_tangent": "coat_tangent",
     "coatior": "coat_ior", "coat_ior": "coat_ior",
     "coatdarkening": "coat_darkening", "coat_darkening": "coat_darkening",
     "thinfilmweight": "thin_film_weight", "thin_film_weight": "thin_film_weight",
     "thinfilmthickness": "thin_film_thickness", "thin_film_thickness": "thin_film_thickness",
     "thinfilmior": "thin_film_ior", "thin_film_ior": "thin_film_ior",
     "emissionluminance": "emission_luminance", "emission_luminance": "emission_luminance",
+    "emissionweight": "emission_luminance", "emission_weight": "emission_luminance",
     "emissioncolor": "emission_color", "emission_color": "emission_color",
     "emission": "emission_color", "emissive": "emission_color",
-    "opacity": "opacity",
+    "opacity": "opacity", "geometryopacity": "opacity", "geometry_opacity": "opacity",
+    "thinwalled": "thin_walled", "thin_walled": "thin_walled",
+    "geometrythinwalled": "thin_walled", "geometry_thin_walled": "thin_walled",
     "normal": "normal",
     "normalopengl": "normal",
     "normal_opengl": "normal",
     "normalgl": "normal",
     "normal_gl": "normal",
+    "tangent": "tangent", "geometrytangent": "tangent", "geometry_tangent": "tangent",
     "height": "height",
     "displacement": "height",
 }
