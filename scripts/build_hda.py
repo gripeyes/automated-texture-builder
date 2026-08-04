@@ -264,16 +264,33 @@ def build() -> Path:
         "Help",
         """= Automated Texture Builder =
 
-Scans Painter texture sets, creates validated TX files, and creates visible
-material-builder subnetworks in a sibling Solaris Material Library LOP.
+Turns a texture folder into ready-to-use material subnetworks in Solaris.
+
+Quick start:
+1. Choose Source Direct, Generate / Update TX, or Existing TX.
+2. Select the texture folder.
+3. Choose the renderer material builder and surface model.
+4. Choose Automatic / UDIM or Repeating Tiled Image.
+5. Click Convert, Build and Assign.
+
+The tool groups matching textures, optionally creates render-ready TX files,
+and creates one visible material subnetwork per texture set in a sibling
+Material Library LOP. It recognizes the core PBR maps plus OpenPBR transmission,
+translucency, subsurface, fuzz, coat, thin-film, opacity, emission, normals,
+tangents and displacement.
 
 Choose OpenPBR Surface or MaterialX Standard Surface, and choose a generic,
-Karma, or Arnold USD MaterialX builder. Automatic/UDIM mode uses MtlX Image
-with explicit UV input; repeating mode uses a shared MtlX USD Transform 2D
-feeding regular MtlX Image nodes with periodic wrapping.
+Karma, Arnold, native Arnold, or MoonRay material builder. Every texture gets
+an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles;
+Repeating mode adds a shared MtlX USD Transform 2D.
 
-Automatic material assignment is conservative: a Painter mesh-name prefix
-must uniquely match a USD Mesh or GeomSubset name.
+Leave Houdini OCIO enabled unless the project requires another config. Color
+maps are converted to scene-linear; data maps and completed TX files stay Raw.
+Input bit depth is detected automatically and displacement is stored float32.
+
+Automatic USD assignment is off by default. When enabled, it matches exact
+names first and then tries unique partial names longest-first. Ambiguous matches
+are skipped.
 """,
     )
     definition.updateFromNode(hda)
