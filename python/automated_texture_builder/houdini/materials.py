@@ -215,7 +215,7 @@ def _publish_library(library: hou.Node, material_paths: dict[str, str]) -> dict[
             for parm_name, value in (
                 (f"enable{index}", 1), (f"matflag{index}", 0),
                 (f"matnode{index}", node_name), (f"matpath{index}", node_name),
-                (f"assign{index}", 0),
+                (f"assign{index}", 0), (f"geopath{index}", ""),
             ):
                 parm = library.parm(parm_name)
                 if parm is not None:
@@ -581,7 +581,7 @@ def normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
 
 
-def auto_assign(assign: hou.Node, stage, material_paths: dict[str, str], geometry_root: str) -> dict[str, str]:
+def auto_assign(library: hou.Node, stage, material_paths: dict[str, str], geometry_root: str) -> dict[str, str]:
     candidates = []
     root = stage.GetPrimAtPath(geometry_root) if geometry_root else stage.GetPseudoRoot()
     if root:
@@ -615,8 +615,10 @@ def auto_assign(assign: hou.Node, stage, material_paths: dict[str, str], geometr
             best = [path for rank, length, path in ranked if (rank, length) == best_rank]
             if len(best) == 1:
                 matches[set_name] = best[0]
-    assign.parm("nummaterials").set(len(matches))
-    for index, (set_name, prim_path) in enumerate(sorted(matches.items()), 1):
-        assign.parm(f"primpattern{index}").set(prim_path)
-        assign.parm(f"matspecpath{index}").set(material_paths[set_name])
+    # Material Library uses the same sorted order authored by _publish_library.
+    # Bind directly in each material entry instead of creating another LOP.
+    for index, set_name in enumerate(sorted(material_paths), 1):
+        assigned_path = matches.get(set_name, "")
+        library.parm(f"assign{index}").set(1 if assigned_path else 0)
+        library.parm(f"geopath{index}").set(assigned_path)
     return matches

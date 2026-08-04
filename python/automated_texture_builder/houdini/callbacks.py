@@ -218,7 +218,7 @@ def _message(text: str, error: bool = False) -> None:
         )
 
 
-def _solaris_nodes(controller: hou.Node, with_assignment: bool):
+def _solaris_nodes(controller: hou.Node):
     parent = controller.parent()
     requested = controller.evalParm("library_name").strip() or controller.name()
     owner = controller.path()
@@ -249,19 +249,22 @@ def _solaris_nodes(controller: hou.Node, with_assignment: bool):
     library.parm("matpathprefix").set("/materials/")
     library.parm("genpreviewshaders").set(1)
     library.setPosition(controller.position() + hou.Vector2(0.0, -2.0))
-    assign = None
-    final = library
-    if with_assignment:
-        assign_name = library.name() + "_assign"
-        assign = parent.node(assign_name)
-        if assign is None or assign.type().name() != "assignmaterial" or assign.userData("automated_texture_builder") != "1":
-            assign = parent.createNode("assignmaterial", assign_name)
-            assign.setUserData("automated_texture_builder", "1")
-        assign.setInput(0, library)
-        assign.setPosition(library.position() + hou.Vector2(0.0, -2.0))
-        final = assign
-    final.setDisplayFlag(True)
-    return library, assign, final
+    # Remove the separate Assign Material LOP produced by older tool versions.
+    # Preserve any downstream wiring by reconnecting its consumers to the
+    # Material Library, which now authors the bindings itself.
+    for child in list(parent.children()):
+        if (
+            child.type().name() == "assignmaterial"
+            and child.userData("automated_texture_builder") == "1"
+            and child.inputs() and child.inputs()[0] == library
+        ):
+            for connection in child.outputConnections():
+                connection.outputNode().setInput(
+                    connection.inputIndex(), library, connection.outputIndex(),
+                )
+            child.destroy()
+    library.setDisplayFlag(True)
+    return library
 
 
 def run(node: hou.Node) -> None:
@@ -299,7 +302,7 @@ def run(node: hou.Node) -> None:
                 manifest = manifest_source_images(source, ocio, bool(node.evalParm("inspect_images")))
             _update_conversion_summary(node, manifest, workflow)
             auto = bool(node.evalParm("auto_assign"))
-            library, assign, final = _solaris_nodes(node, auto)
+            library = _solaris_nodes(node)
             material_paths = build_materials(
                 library,
                 manifest,
@@ -311,12 +314,12 @@ def run(node: hou.Node) -> None:
             matches = {}
             if auto:
                 stage = node.inputs()[0].stage() if node.inputs() and node.inputs()[0] else node.stage()
-                matches = auto_assign(assign, stage, material_paths, node.evalParm("geometry_root"))
-            library.parent().layoutChildren(items=(library, assign) if assign else (library,))
+                matches = auto_assign(library, stage, material_paths, node.evalParm("geometry_root"))
+            library.parent().layoutChildren(items=(library,))
         _message(
             f"Built {len(material_paths)} visible Solaris material subnet(s) in:\n{library.path()}\n"
             f"OCIO scene-linear: {scene_linear}\nManifest: {manifest}\n"
-            f"Automatic assignments: {len(matches)}. Output node: {final.path()}"
+            f"Automatic assignments: {len(matches)}. Output node: {library.path()}"
         )
     except Exception as exc:
         summary = node.parm("conversion_summary")

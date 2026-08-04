@@ -164,6 +164,10 @@ shortest, helping avoid assignments such as `Extract1` incorrectly matching
 `Extract12`. Imported prefixes such as `shop_materialpath` are ignored.
 Ambiguous matches are skipped rather than guessed.
 
+Bindings are written into each material entry's **Assign to Geometry** and
+**Geometry Path** fields in the generated Material Library LOP. The tool does
+not create a separate Assign Material node.
+
 Use the **USD Geometry Root** field to limit matching to a particular part of
 the Solaris scene graph.
 

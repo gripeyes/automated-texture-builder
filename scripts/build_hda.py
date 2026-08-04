@@ -160,7 +160,7 @@ def build() -> Path:
     textures.addParmTemplate(hou.SeparatorParmTemplate("sep_assignment"))
     textures.addParmTemplate(explained(
         hou.ToggleParmTemplate("auto_assign", "Assign to Matching USD Meshes", False),
-        "Creates an Assign Material LOP for the best unique partial name match. Longer matching strings are preferred; ambiguous equal matches remain unassigned.",
+        "Enables Assign to Geometry inside each generated Material Library entry for the best unique name match. Longer matching strings are preferred; ambiguous equal matches remain unassigned.",
     ))
     root = hou.StringParmTemplate("geometry_root", "USD Geometry Root", 1, ("/",))
     root.setConditional(hou.parmCondType.DisableWhen, "{ auto_assign == 0 }")
@@ -288,9 +288,10 @@ Leave Houdini OCIO enabled unless the project requires another config. Color
 maps are converted to scene-linear; data maps and completed TX files stay Raw.
 Input bit depth is detected automatically and displacement is stored float32.
 
-Automatic USD assignment is off by default. When enabled, it matches exact
-names first and then tries unique partial names longest-first. Ambiguous matches
-are skipped.
+Automatic USD assignment is off by default. When enabled, it fills the Assign
+to Geometry fields inside the generated Material Library. It matches exact names
+first and then tries unique partial names longest-first. Ambiguous matches are
+skipped; no separate Assign Material LOP is created.
 """,
     )
     definition.updateFromNode(hda)
