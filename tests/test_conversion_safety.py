@@ -26,6 +26,8 @@ class ConversionSafetyTests(unittest.TestCase):
             ["--format", "exr", "-d", "float"],
         )
         self.assertEqual(maketx_output_type("height", "half"), "float")
+        self.assertEqual(maketx_output_type("displacement", "uint16"), "float")
+        self.assertEqual(maketx_output_type("vector_displacement", "half"), "float")
 
     def test_eight_bit_color_is_safely_promoted_for_ocio(self):
         self.assertEqual(

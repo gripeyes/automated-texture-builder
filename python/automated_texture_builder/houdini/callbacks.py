@@ -376,6 +376,8 @@ def run(node: hou.Node) -> None:
                 "st",
                 float(node.evalParm("height_scale")),
                 float(node.evalParm("height_zero")),
+                _menu(node, "geometry_detail_mode"),
+                float(node.evalParm("bump_scale")),
             )
             matches = {}
             assignment_status = "Automatic assignment disabled."

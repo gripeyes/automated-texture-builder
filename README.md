@@ -134,18 +134,43 @@ Painter height pixels do not carry a dependable real-world displacement
 distance. Connecting them to a displacement node at its default scale of 1 can
 move points by one full scene unit and severely enlarge or break an asset.
 
-The tool therefore authors two explicit controls:
+The tool keeps these filename semantics distinct instead of routing every map
+through true displacement:
 
-- **Height / Displacement Scale** defaults to `0.01`. MaterialX and MoonRay use
-  it in scene units; Native Arnold uses it as bump strength.
+| Detected map | Automatic behavior |
+| --- | --- |
+| `Height` | Bump detail; does not change the silhouette |
+| `Displacement` | Scalar true displacement along the normal |
+| `VectorDisplacement` or `VDisp` | Three-channel true displacement |
+
+**Height / Displacement Mode** can override Automatic with Bump Only, True
+Displacement, or Ignore. True Displacement prefers vector displacement, then
+scalar displacement, then height. This makes a Height-only Painter export safe
+by default while still allowing an artist to request silhouette displacement.
+
+The tool also authors separate bump and displacement controls because they use
+different units:
+
+- **Bump Scale** defaults to `1.0` and changes shading-normal strength without
+  moving geometry.
+- **Displacement Scale (Scene Units)** defaults to `0.01` and controls actual
+  point movement for scalar and vector displacement.
 - **Height Zero Level** defaults to `0.0`, matching the signed floating-point
   height values preserved by the included Painter preset. Set it to `0.5` for
   a normalized height texture where middle gray is flat.
 
-The MaterialX graph subtracts the zero level before MtlX Displacement applies
-the scale. MoonRay receives the equivalent `zero_value` and
-`height_multiplier` settings. These values remain artist controls because
-texture pixels alone cannot determine the intended physical displacement.
+For bump, MaterialX chains MtlX Bump after the tangent normal map. For true
+displacement, it subtracts the zero level before MtlX Displacement applies the
+scale. Native Arnold creates the corresponding bump or scaled displacement
+network. MoonRay supports scalar and vector displacement; because its shipped
+nodes do not include a scalar height-to-bump converter, Automatic leaves a
+Height-only map as a documented, unconnected bump request. Choose True
+Displacement explicitly to use that map with MoonRay.
+
+These values remain artist controls because texture pixels alone cannot
+determine the intended physical displacement. True displacement also requires
+renderer-side subdivision/dicing and displacement bounds.
+
 Generated TX files are also read as Raw because their color conversion is
 already baked in; this prevents a second transform.
 

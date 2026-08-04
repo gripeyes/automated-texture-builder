@@ -154,16 +154,28 @@ def build() -> Path:
         ("Automatic / UDIM", "Repeating Texture (USD Transform 2D)"),
         default_value=0,
     ), "Automatic / UDIM uses MtlX Image and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D across regular MtlX Image nodes with periodic wrapping, providing UV scale, rotation and translation."))
+    textures.addParmTemplate(explained(hou.MenuParmTemplate(
+        "geometry_detail_mode", "Height / Displacement Mode",
+        ("auto", "bump", "displacement", "off"),
+        (
+            "Automatic by Texture Name", "Bump Only",
+            "True Displacement", "Ignore Height / Displacement",
+        ),
+        default_value=0,
+    ), "Automatic treats Height as bump detail and explicitly named Displacement or VectorDisplacement maps as true geometry displacement. Bump Only never changes the silhouette. True Displacement uses the best available vector, displacement, then height map. Ignore leaves geometry detail disconnected. MoonRay has no scalar bump-map node, so a Height-only map requires explicit True Displacement there."))
     textures.addParmTemplate(explained(hou.FloatParmTemplate(
-        "height_scale", "Height / Displacement Scale", 1, (0.01,),
-    ), "Maximum height strength applied by the generated material. MaterialX and MoonRay displacement interpret this in scene units; Native Arnold uses it as bump strength. Painter height values do not contain a reliable real-world distance, so adjust this for the asset's scale."))
+        "bump_scale", "Bump Scale", 1, (1.0,),
+    ), "Dimensionless strength for Height maps evaluated as bump. This changes shading normals without moving the mesh silhouette."))
+    textures.addParmTemplate(explained(hou.FloatParmTemplate(
+        "height_scale", "Displacement Scale (Scene Units)", 1, (0.01,),
+    ), "Physical strength for scalar or vector true displacement. Painter texture pixels do not contain a reliable real-world distance, so adjust this for the asset's scene scale."))
     textures.addParmTemplate(explained(hou.FloatParmTemplate(
         "height_zero", "Height Zero Level", 1, (0.0,),
     ), "Texture value that leaves the surface unchanged. The included floating-point Substance Painter preset preserves signed height around 0. Use 0.5 for a conventional normalized black-to-white height map whose neutral value is middle gray."))
     textures.addParmTemplate(explained(compact_info(
         "height_note", "Height Handling",
-        "Height is centered around the zero level, then multiplied by the explicit scale.",
-    ), "This prevents a 0-1 texture from moving geometry by a full scene unit. True displacement also requires suitable tessellation and displacement bounds on the rendered geometry."))
+        "Auto: Height → bump; Displacement / VectorDisplacement → true displacement.",
+    ), "Scalar true displacement is centered around the zero level and multiplied by the explicit scale. True displacement also requires suitable tessellation and displacement bounds on the rendered geometry."))
     textures.addParmTemplate(explained(hou.StringParmTemplate(
         "library_name", "Material Library Name", 1, ("$OS",)
     ), "Name of the visible sibling Material Library LOP created in /stage. $OS follows the Automated Texture Builder node name; Houdini adds a numeric suffix when a sibling already uses that exact name."))

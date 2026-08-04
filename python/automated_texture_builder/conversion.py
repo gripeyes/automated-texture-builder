@@ -115,10 +115,13 @@ def image_pixel_type(path: Path, oiiotool: str | None = None) -> str:
     return {"int8": "sint8", "int16": "sint16", "int32": "sint32"}.get(value, value)
 
 
+GEOMETRY_DETAIL_CHANNELS = {"height", "displacement", "vector_displacement"}
+
+
 def maketx_output_type(channel: str, source_type: str) -> str:
     """Choose storage from map semantics and the source's real pixel type."""
     source_type = source_type.lower()
-    if channel == "height":
+    if channel in GEOMETRY_DETAIL_CHANNELS:
         # Displacement is evaluated geometrically and must never be quantized
         # down just because an incoming file happened to use integer storage.
         return "float"
@@ -148,7 +151,7 @@ def maketx_storage_args(
     if output_type in {"uint8", "sint8", "uint16", "sint16"}:
         return ["--format", "tiff", "-d", output_type]
     # Fallback for unusual/unknown inputs: maketx preserves the input type.
-    if channel == "height":
+    if channel in GEOMETRY_DETAIL_CHANNELS:
         return ["--format", "exr", "-d", "float"]
     if channel in COLOR_CHANNELS or source.suffix.lower() == ".exr" or channel == "normal":
         return ["--format", "exr", "-d", "half"]

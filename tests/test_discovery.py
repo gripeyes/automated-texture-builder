@@ -15,6 +15,9 @@ class DiscoveryTests(unittest.TestCase):
             "hero_helmet_Anisotropy_Raw.1001.tif": "specular_roughness_anisotropy",
             "hero_helmet_Normal_OpenGL_Raw.1001.tif": "normal",
             "hero_helmet_Height_Raw.1001.exr": "height",
+            "hero_helmet_Displacement_Raw.1001.exr": "displacement",
+            "hero_helmet_VectorDisplacement_Raw.1001.exr": "vector_displacement",
+            "hero_helmet_VDisp_Raw.1001.exr": "vector_displacement",
         }
         for name, expected in cases.items():
             with self.subTest(name=name):

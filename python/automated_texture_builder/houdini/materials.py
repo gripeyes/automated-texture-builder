@@ -7,6 +7,7 @@ import re
 import hou
 import voptoolutils
 
+from automated_texture_builder.geometry_detail import geometry_detail_plan
 from automated_texture_builder.matching import match_materials_to_paths
 
 
@@ -237,7 +238,8 @@ def _arnold_image(builder: hou.Node, name: str, item: dict, texture_mode: str) -
 
 
 def _build_arnold_native(
-    library: hou.Node, data: dict, texture_mode: str, height_scale: float,
+    library: hou.Node, data: dict, texture_mode: str,
+    height_scale: float, height_zero: float, detail_mode: str, bump_scale: float,
 ) -> dict[str, str]:
     clear_generated(library)
     material_paths: dict[str, str] = {}
@@ -312,15 +314,31 @@ def _build_arnold_native(
             coat_normal = builder.createNode("arnold::normal_map", "coat_normal")
             _connect_output(coat_normal, "input", image, "rgba")
             _connect(surface, "coat_normal", coat_normal)
-        if "height" in maps:
-            image = _arnold_image(builder, "height", maps["height"], texture_mode)
+        bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
+        if bump_channel:
+            image = _arnold_image(builder, bump_channel, maps[bump_channel], texture_mode)
             image.parm("color_space").set("Raw")
-            bump = builder.createNode("arnold::bump2d", "height_bump")
-            bump.parm("bump_height").set(height_scale)
+            bump = builder.createNode("arnold::bump2d", bump_channel + "_bump")
+            bump.parm("bump_height").set(bump_scale)
             _connect_output(bump, "bump_map", image, "r")
             if normal_node is not None:
                 _connect(bump, "normal", normal_node)
             _connect(surface, "normal", bump)
+        if displacement_channel:
+            vector = displacement_channel == "vector_displacement"
+            image = _arnold_image(
+                builder, displacement_channel, maps[displacement_channel], texture_mode,
+            )
+            image.parm("color_space").set("Raw")
+            centered = builder.createNode("arnold::subtract", displacement_channel + "_zero_level")
+            scaled = builder.createNode("arnold::multiply", displacement_channel + "_scale")
+            for component in "rgb":
+                centered.parm("input2" + component).set(height_zero)
+                scaled.parm("input2" + component).set(height_scale)
+            output_name = "rgb" if vector else "r"
+            _connect_output(centered, "input1", image, "rgba" if vector else "r")
+            _connect_output(scaled, "input1", centered, output_name)
+            _connect_output(output, "displacement", scaled, output_name)
         builder.layoutChildren()
         builder.setPosition(hou.Vector2(float(index % 4) * 4.0, -float(index // 4) * 3.0))
         material_paths[set_name] = "/materials/" + builder.name()
@@ -333,6 +351,7 @@ MOONRAY_TYPES = {
     "normal": "Vop::DW_MOONRAY::ImageNormalMap::1",
     "to_float": "Vop::DW_MOONRAY::MultiChannelToFloatMap::1",
     "displacement": "Vop::DW_MOONRAY::NormalDisplacement::1",
+    "vector_displacement": "Vop::DW_MOONRAY::VectorDisplacement::1",
 }
 
 
@@ -377,7 +396,7 @@ def _moonray_image(
 
 def _build_moonray(
     library: hou.Node, data: dict, texture_mode: str,
-    height_scale: float, height_zero: float,
+    height_scale: float, height_zero: float, detail_mode: str,
 ) -> dict[str, str]:
     _ensure_moonray_types()
     clear_generated(library)
@@ -442,10 +461,31 @@ def _build_moonray(
             normal.parm("normal_encoding").set("[0,1]")
             normal.parm("wrap_around").set(1 if texture_mode == "repeat" else 0)
             _connect(surface, "input_normal", normal)
-        if "height" in maps:
-            height_image = _moonray_image(builder, "height_image", maps["height"], texture_mode)
-            height_red = builder.createNode(MOONRAY_TYPES["to_float"], "height_red")
-            displacement = builder.createNode(MOONRAY_TYPES["displacement"], "height_displacement")
+        bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
+        if bump_channel:
+            builder.setComment(
+                f"{bump_channel} detected for bump, but MoonRay has no scalar bump map node; "
+                "use True Displacement mode to displace it explicitly."
+            )
+        if displacement_channel == "vector_displacement":
+            vector_image = _moonray_image(
+                builder, "vector_displacement_image", maps[displacement_channel], texture_mode,
+            )
+            displacement = builder.createNode(
+                MOONRAY_TYPES["vector_displacement"], "vector_displacement",
+            )
+            displacement.parm("factor").set(height_scale)
+            displacement_output = _moonray_connector(builder, "displacement", "Displacement", 25)
+            _connect(displacement, "vector", vector_image)
+            _connect(displacement_output, "suboutput", displacement)
+        elif displacement_channel:
+            height_image = _moonray_image(
+                builder, displacement_channel + "_image", maps[displacement_channel], texture_mode,
+            )
+            height_red = builder.createNode(MOONRAY_TYPES["to_float"], displacement_channel + "_red")
+            displacement = builder.createNode(
+                MOONRAY_TYPES["displacement"], displacement_channel + "_displacement",
+            )
             displacement.parm("zero_value").set(height_zero)
             displacement.parm("height_multiplier").set(height_scale)
             displacement_output = _moonray_connector(builder, "displacement", "Displacement", 25)
@@ -479,12 +519,19 @@ def build_materials(
     uv_primvar: str = "st",
     height_scale: float = 0.01,
     height_zero: float = 0.0,
+    detail_mode: str = "auto",
+    bump_scale: float = 1.0,
 ) -> dict[str, str]:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     if profile == "arnold_native":
-        return _build_arnold_native(library, data, texture_mode, height_scale)
+        return _build_arnold_native(
+            library, data, texture_mode, height_scale, height_zero, detail_mode,
+            bump_scale,
+        )
     if profile == "moonray":
-        return _build_moonray(library, data, texture_mode, height_scale, height_zero)
+        return _build_moonray(
+            library, data, texture_mode, height_scale, height_zero, detail_mode,
+        )
     clear_generated(library)
     material_paths: dict[str, str] = {}
     input_map = OPENPBR_INPUTS if surface_model == "openpbr" else STANDARD_INPUTS
@@ -553,6 +600,7 @@ def build_materials(
             surface.setComment(
                 "Legacy SpecularLevel was not connected. Export OpenPBR SpecularWeight instead."
             )
+        normal_result = None
         if "normal" in maps:
             image = _image(
                 builder, "normal_image", maps["normal"]["path"], "vector3",
@@ -563,6 +611,7 @@ def build_materials(
             normal.setPosition(hou.Vector2(-1.5, -3.0))
             _connect(normal, "in", image)
             _connect(surface, "geometry_normal" if surface_model == "openpbr" else "normal", normal)
+            normal_result = normal
         if "coat_normal" in maps:
             image = _image(
                 builder, "coat_normal_image", maps["coat_normal"]["path"], "vector3",
@@ -571,17 +620,38 @@ def build_materials(
             normal = builder.createNode("mtlxnormalmap", "coat_normal")
             _connect(normal, "in", image)
             _connect(surface, "geometry_coat_normal" if surface_model == "openpbr" else "coat_normal", normal)
-        if "height" in maps:
+        bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
+        if bump_channel:
             height = _image(
-                builder, "height", maps["height"]["path"], "float",
+                builder, bump_channel, maps[bump_channel]["path"], "float",
+                uv, texture_mode, "Raw", uv_transform,
+            )
+            bump = builder.createNode("mtlxbump", bump_channel + "_bump")
+            bump.parm("scale").set(bump_scale)
+            _connect(bump, "height", height)
+            if normal_result is not None:
+                _connect(bump, "normal", normal_result)
+            _connect(surface, "geometry_normal" if surface_model == "openpbr" else "normal", bump)
+            height.setPosition(hou.Vector2(-4.5, -5.0))
+            bump.setPosition(hou.Vector2(-1.5, -5.0))
+        if displacement_channel:
+            vector = displacement_channel == "vector_displacement"
+            displacement_image = _image(
+                builder, displacement_channel, maps[displacement_channel]["path"],
+                "vector3" if vector else "float",
                 uv, texture_mode, "Raw", uv_transform,
             )
             centered_height = builder.createNode("mtlxsubtract", "height_zero_level")
-            centered_height.parm("signature").set("float")
-            centered_height.parm("in2").set(height_zero)
-            _connect(centered_height, "in1", height)
+            centered_height.parm("signature").set("vector3" if vector else "float")
+            if vector:
+                for component in "xyz":
+                    centered_height.parm("in2_vector3" + component).set(height_zero)
+                displacement.parm("signature").set("vector3")
+            else:
+                centered_height.parm("in2").set(height_zero)
+            _connect(centered_height, "in1", displacement_image)
             displacement.parm("scale").set(height_scale)
-            height.setPosition(hou.Vector2(-4.5, -5.0))
+            displacement_image.setPosition(hou.Vector2(-4.5, -6.5))
             centered_height.setPosition(hou.Vector2(-3.0, -5.0))
             displacement.setPosition(hou.Vector2(-1.5, -5.0))
             _connect(displacement, "displacement", centered_height)

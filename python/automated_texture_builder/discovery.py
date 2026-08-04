@@ -32,6 +32,7 @@ CHANNEL_RE = re.compile(
     r"thin[_ ]?film[_ ]?weight|thin[_ ]?film[_ ]?thickness|thin[_ ]?film[_ ]?ior|"
     r"emission[_ ]?luminance|emission[_ ]?weight|emission[_ ]?color|emissive|emission|"
     r"geometry[_ ]?opacity|geometry[_ ]?thin[_ ]?walled|thin[_ ]?walled|opacity|"
+    r"vector[_ ]?displacement|vdisp|"
     r"normal(?:[_ ]?(?:opengl|gl))?|geometry[_ ]?tangent|tangent|height|displacement"
     r")(?=$|[_\-.])",
     re.IGNORECASE,
@@ -143,7 +144,10 @@ ALIASES = {
     "normal_gl": "normal",
     "tangent": "tangent", "geometrytangent": "tangent", "geometry_tangent": "tangent",
     "height": "height",
-    "displacement": "height",
+    "displacement": "displacement",
+    "vectordisplacement": "vector_displacement",
+    "vector_displacement": "vector_displacement",
+    "vdisp": "vector_displacement",
 }
 
 
