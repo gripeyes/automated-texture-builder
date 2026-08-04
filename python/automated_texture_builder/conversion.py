@@ -94,7 +94,10 @@ def _output_path(texture: TextureFile, source_root: Path, output_root: Path) -> 
 def maketx_storage_args(channel: str, source: Path) -> list[str]:
     """Choose TX pixel storage without discarding displacement precision."""
     if channel == "height":
-        return ["--format", "exr", "-d", "float"]
+        # Let OIIO preserve the source precision: float EXR remains float and
+        # half EXR remains half. Inspecting pixel min/max is not a safe proxy
+        # for the precision needed by a displacement map.
+        return ["--format", "exr"]
     if channel in COLOR_CHANNELS or source.suffix.lower() == ".exr" or channel == "normal":
         return ["--format", "exr", "-d", "half"]
     return []

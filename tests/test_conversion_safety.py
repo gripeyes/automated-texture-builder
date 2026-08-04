@@ -12,10 +12,10 @@ from automated_texture_builder.conversion import (
 
 
 class ConversionSafetyTests(unittest.TestCase):
-    def test_maketx_preserves_full_float_height(self):
+    def test_maketx_preserves_source_precision_for_height(self):
         self.assertEqual(
             maketx_storage_args("height", Path("hero_Height.exr")),
-            ["--format", "exr", "-d", "float"],
+            ["--format", "exr"],
         )
 
     def test_other_exr_maps_remain_half_float(self):
