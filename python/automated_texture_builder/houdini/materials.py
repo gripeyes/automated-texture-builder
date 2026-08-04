@@ -7,6 +7,8 @@ import re
 import hou
 import voptoolutils
 
+from automated_texture_builder.matching import match_materials_to_paths
+
 
 OPENPBR_INPUTS = {
     "base_weight": ("base_weight", "float"),
@@ -577,44 +579,17 @@ def build_materials(
     return _publish_library(library, material_paths)
 
 
-def normalize(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.casefold())
-
-
 def auto_assign(library: hou.Node, stage, material_paths: dict[str, str], geometry_root: str) -> dict[str, str]:
     candidates = []
     root = stage.GetPrimAtPath(geometry_root) if geometry_root else stage.GetPseudoRoot()
     if root:
         for prim in stage.Traverse():
             path = str(prim.GetPath())
-            if (not geometry_root or path.startswith(geometry_root)) and prim.GetTypeName() in {"Mesh", "GeomSubset"}:
-                candidates.append(path)
-    matches: dict[str, str] = {}
-    for set_name in material_paths:
-        set_key = normalize(set_name)
-        ranked = []
-        for path in candidates:
-            prim_name = path.rsplit("/", 1)[-1]
-            prim_key = normalize(prim_name)
-            if prim_key == set_key:
-                ranked.append((3, len(prim_key), path))
-                continue
-            terms = [
-                normalize(term)
-                for term in re.split(r"[_\-.\s]+", prim_name)
-                if len(normalize(term)) >= 4
-                and normalize(term) not in {"shop", "path", "material", "materialpath", "shopmaterialpath"}
-            ]
-            matching_terms = [term for term in terms if term in set_key]
-            if matching_terms:
-                ranked.append((2, max(map(len, matching_terms)), path))
-            elif min(len(prim_key), len(set_key)) >= 6 and (prim_key in set_key or set_key in prim_key):
-                ranked.append((1, min(len(prim_key), len(set_key)), path))
-        if ranked:
-            best_rank = max((rank, length) for rank, length, _ in ranked)
-            best = [path for rank, length, path in ranked if (rank, length) == best_rank]
-            if len(best) == 1:
-                matches[set_name] = best[0]
+            root_path = geometry_root.rstrip("/")
+            in_root = not root_path or path == root_path or path.startswith(root_path + "/")
+            if in_root and prim.GetTypeName() in {"Mesh", "GeomSubset"}:
+                candidates.append((path, prim.GetTypeName() == "GeomSubset"))
+    matches = match_materials_to_paths(material_paths, candidates)
     # Material Library uses the same sorted order authored by _publish_library.
     # Bind directly in each material entry instead of creating another LOP.
     for index, set_name in enumerate(sorted(material_paths), 1):

@@ -75,6 +75,14 @@ class DiscoveryTests(unittest.TestCase):
         texture = parse_texture(Path("/tmp/asset_Roughness.1002.tif"))
         self.assertTrue(udim_pattern([texture], use_output=False).endswith("/asset_Roughness.<UDIM>.tif"))
 
+    def test_udim_pattern_never_rewrites_parent_folder(self):
+        texture = parse_texture(Path("/tmp/1001/asset_Roughness.1002.tif"))
+        self.assertTrue(
+            udim_pattern([texture], use_output=False).endswith(
+                "/1001/asset_Roughness.<UDIM>.tif"
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

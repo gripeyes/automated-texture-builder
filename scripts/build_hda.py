@@ -176,8 +176,8 @@ def build() -> Path:
     ))
     textures.addParmTemplate(explained(compact_info(
         "assignment_note", "Automatic Assignment",
-        "Looks from the longest name to the shortest to avoid mismatched automatic assignments.",
-    ), "Examples such as Extract12 and Extract51 match the corresponding longer token first, even when USD names include a shop_materialpath_ prefix."))
+        "Matches complete names first, prefers geometry subsets, and validates UDIM st/uv coordinates.",
+    ), "Numeric suffixes are preserved, imported prefixes are ignored, and partial matches are checked from longest to shortest. Missing UDIM tiles or st/uv primvars are reported here after the build."))
     textures.addParmTemplate(explained(button(
         "run_all", "Convert, Build and Assign",
         "import automated_texture_builder.houdini.callbacks as c; c.run(kwargs['node'])",

@@ -195,4 +195,6 @@ def udim_pattern(textures: list[TextureFile], use_output: bool = True) -> str:
     path = texture.output if use_output and texture.output else texture.source
     if texture.udim is None:
         return str(path)
-    return UDIM_RE.sub("<UDIM>", str(path), count=1)
+    # Replace the tile in the filename only. A parent folder may also contain
+    # a 1001-style asset/version token and must never be rewritten.
+    return str(path.with_name(UDIM_RE.sub("<UDIM>", path.name, count=1)))

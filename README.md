@@ -158,11 +158,14 @@ and in the generated TX metadata.
 
 Automatic assignment is optional and disabled by default.
 
-When enabled, the tool first looks for exact texture-set and USD mesh-name
-matches. It then tries meaningful partial matches from the longest name to the
-shortest, helping avoid assignments such as `Extract1` incorrectly matching
-`Extract12`. Imported prefixes such as `shop_materialpath` are ignored.
-Ambiguous matches are skipped rather than guessed.
+When enabled, the tool first compares complete meaningful texture-set and USD
+primitive names, including numeric suffixes such as `_14` and `_copy2`. It then
+tries meaningful partial matches from the longest name to the shortest, helping
+avoid assignments such as `Extract1` incorrectly matching `Extract12`. Imported
+prefixes such as `bake_lp` and `shop_materialpath` are ignored. When Solaris
+contains both a parent Mesh and its material GeomSubset, the GeomSubset is
+preferred so partition-level bindings are preserved. Ambiguous matches are
+skipped rather than guessed.
 
 Bindings are written into each material entry's **Assign to Geometry** and
 **Geometry Path** fields in the generated Material Library LOP. The tool does
@@ -170,6 +173,11 @@ not create a separate Assign Material node.
 
 Use the **USD Geometry Root** field to limit matching to a particular part of
 the Solaris scene graph.
+
+For assigned UDIM materials, the tool also checks the inherited USD `st`
+primvar (with `uv` as a fallback) and reports if the mesh references a UDIM tile
+that is absent from the texture set. Extra texture tiles are allowed because a
+shared texture set can cover several sibling meshes.
 
 ## Substance Painter preset
 

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import math
 import traceback
 
 import hou
+from pxr import UsdGeom
 
 from automated_texture_builder.conversion import (
     COLOR_CHANNELS, classify, convert, delete_original_sources,
@@ -208,6 +210,68 @@ def _update_conversion_summary(node: hou.Node, manifest: Path, workflow: str) ->
     return summary
 
 
+def _assigned_udim_status(stage, matches: dict[str, str], manifest: Path) -> str:
+    """Validate that assigned UDIM materials can read suitable USD UV primvars."""
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    sets = {item["name"]: item for item in data.get("texture_sets", [])}
+    checked = 0
+    issues: list[str] = []
+    for set_name, prim_path in matches.items():
+        item = sets.get(set_name, {})
+        texture_tiles = {
+            int(tile)
+            for texture in item.get("maps", {}).values()
+            if texture.get("udim")
+            for tile in texture.get("tiles", [])
+        }
+        if not texture_tiles:
+            continue
+        prim = stage.GetPrimAtPath(prim_path)
+        mesh = prim
+        while mesh and mesh.IsValid() and mesh.GetTypeName() != "Mesh":
+            mesh = mesh.GetParent()
+        if not mesh or not mesh.IsValid():
+            issues.append(f"{set_name}: assigned prim has no parent Mesh")
+            continue
+        api = UsdGeom.PrimvarsAPI(mesh)
+        primvar = api.FindPrimvarWithInheritance("st")
+        if not primvar or not primvar.HasValue():
+            primvar = api.FindPrimvarWithInheritance("uv")
+        if not primvar or not primvar.HasValue():
+            issues.append(f"{set_name}: {mesh.GetPath()} has no st/uv primvar")
+            continue
+        checked += 1
+        try:
+            values = primvar.ComputeFlattened() or []
+            uv_tiles = set()
+            for value in values:
+                u, v = float(value[0]), float(value[1])
+                # Ignore exact tile-border vertices; interior values identify
+                # the patch without assigning a shared edge to the wrong tile.
+                if math.isclose(u, round(u), abs_tol=1e-7) or math.isclose(v, round(v), abs_tol=1e-7):
+                    continue
+                if u >= 0.0 and v >= 0.0:
+                    uv_tiles.add(1001 + math.floor(u) + 10 * math.floor(v))
+            # A texture set may legitimately contain tiles used by sibling
+            # meshes.  Only warn when this assigned mesh references a tile
+            # for which the material has no texture file.
+            missing = sorted(uv_tiles - texture_tiles) if uv_tiles else []
+            if missing:
+                issues.append(
+                    f"{set_name}: {primvar.GetPrimvarName()} requires missing "
+                    f"texture tile(s) {', '.join(map(str, missing))}"
+                )
+        except Exception:
+            # The primvar exists and is correctly named; some procedural prims
+            # cannot expose flattened values until render time.
+            pass
+    if issues:
+        return "WARNING: " + "; ".join(issues)
+    if checked:
+        return f"Assigned {len(matches)} material(s); UDIM st/uv verified on {checked} mesh(es)."
+    return f"Assigned {len(matches)} material(s); no assigned UDIM sets required UV validation."
+
+
 def _message(text: str, error: bool = False) -> None:
     print(text)
     if hou.isUIAvailable():
@@ -312,14 +376,18 @@ def run(node: hou.Node) -> None:
                 "st",
             )
             matches = {}
+            assignment_status = "Automatic assignment disabled."
             if auto:
                 stage = node.inputs()[0].stage() if node.inputs() and node.inputs()[0] else node.stage()
                 matches = auto_assign(library, stage, material_paths, node.evalParm("geometry_root"))
+                assignment_status = _assigned_udim_status(stage, matches, manifest)
+            _set_if_present(node, "assignment_note", assignment_status)
             library.parent().layoutChildren(items=(library,))
         _message(
             f"Built {len(material_paths)} visible Solaris material subnet(s) in:\n{library.path()}\n"
             f"OCIO scene-linear: {scene_linear}\nManifest: {manifest}\n"
-            f"Automatic assignments: {len(matches)}. Output node: {library.path()}"
+            f"Automatic assignments: {len(matches)}. {assignment_status}\n"
+            f"Output node: {library.path()}"
         )
     except Exception as exc:
         summary = node.parm("conversion_summary")
