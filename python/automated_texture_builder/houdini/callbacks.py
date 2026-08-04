@@ -15,7 +15,7 @@ from automated_texture_builder.conversion import (
     scene_linear_space,
 )
 from automated_texture_builder.discovery import scan
-from .materials import auto_assign, build_materials
+from .materials import assignment_candidates, auto_assign, build_materials
 
 
 def _parm(node: hou.Node, name: str, default=""):
@@ -343,6 +343,89 @@ def _solaris_nodes(controller: hou.Node):
     return library
 
 
+def _owned_library(controller: hou.Node):
+    """Find the generated Material Library belonging to this controller."""
+    owner = controller.path()
+    return next(
+        (
+            child for child in controller.parent().children()
+            if child.type().name() == "materiallibrary"
+            and child.userData("automated_texture_builder") == "1"
+            and child.userData("automated_texture_builder_controller") == owner
+        ),
+        None,
+    )
+
+
+def _published_material_paths(library: hou.Node) -> dict[str, str]:
+    """Reconstruct matching names from an already-published Material Library."""
+    stored = library.userData("automated_texture_builder_material_paths")
+    if stored:
+        try:
+            material_paths = json.loads(stored)
+            if isinstance(material_paths, dict):
+                return {str(name): str(path) for name, path in material_paths.items()}
+        except (TypeError, ValueError):
+            pass
+    count = library.parm("materials")
+    result = {}
+    for index in range(1, int(count.eval()) + 1 if count is not None else 1):
+        node_parm = library.parm(f"matnode{index}")
+        if node_parm is None:
+            continue
+        name = node_parm.eval().strip()
+        if name:
+            result[name] = "/materials/" + name
+    return result
+
+
+def _clear_library_assignments(library: hou.Node) -> None:
+    count = library.parm("materials")
+    for index in range(1, int(count.eval()) + 1 if count is not None else 1):
+        _set_if_present(library, f"assign{index}", 0)
+        _set_if_present(library, f"geopath{index}", "")
+
+
+def _assignment_status(node: hou.Node, library: hou.Node, material_paths, manifest=None):
+    """Apply current assignment settings and return matches plus an artist-facing status."""
+    if not bool(node.evalParm("auto_assign")):
+        _clear_library_assignments(library)
+        return {}, "Automatic assignment is off."
+
+    input_node = node.inputs()[0] if node.inputs() else None
+    if input_node is None:
+        _clear_library_assignments(library)
+        return {}, "WARNING: Connect the builder after the Solaris geometry before assigning materials."
+
+    stage = input_node.stage()
+    root = node.evalParm("geometry_root").strip() or "/"
+    candidates = assignment_candidates(stage, root)
+    matches = auto_assign(library, stage, material_paths, root)
+    if not matches:
+        return {}, (
+            f"WARNING: Found {len(candidates)} Mesh/GeomSubset prim(s) below {root}, "
+            f"but none uniquely matched the {len(material_paths)} texture-set name(s)."
+        )
+    if manifest is None:
+        unmatched = sorted(set(material_paths) - set(matches))
+        suffix = f" Unmatched: {', '.join(unmatched)}." if unmatched else ""
+        return matches, f"Assigned {len(matches)} of {len(material_paths)} material(s).{suffix}"
+    return matches, _assigned_udim_status(stage, matches, manifest)
+
+
+def update_assignments(node: hou.Node) -> None:
+    """Refresh bindings immediately when assignment controls change."""
+    library = _owned_library(node)
+    if library is None:
+        status = "Build the materials once; assignment will then update automatically."
+        _set_if_present(node, "assignment_note", status)
+        return
+    material_paths = _published_material_paths(library)
+    matches, status = _assignment_status(node, library, material_paths)
+    _set_if_present(node, "assignment_note", status)
+    library.cook(force=True)
+
+
 def run(node: hou.Node) -> None:
     try:
         refresh_maketx_behavior(node)
@@ -377,7 +460,6 @@ def run(node: hou.Node) -> None:
                     raise RuntimeError("Choose a Source Texture Folder for Source Images Direct mode")
                 manifest = manifest_source_images(source, ocio, bool(node.evalParm("inspect_images")))
             _update_conversion_summary(node, manifest, workflow)
-            auto = bool(node.evalParm("auto_assign"))
             library = _solaris_nodes(node)
             material_paths = build_materials(
                 library,
@@ -391,12 +473,9 @@ def run(node: hou.Node) -> None:
                 _menu(node, "geometry_detail_mode"),
                 float(node.evalParm("bump_scale")),
             )
-            matches = {}
-            assignment_status = "Automatic assignment disabled."
-            if auto:
-                stage = node.inputs()[0].stage() if node.inputs() and node.inputs()[0] else node.stage()
-                matches = auto_assign(library, stage, material_paths, node.evalParm("geometry_root"))
-                assignment_status = _assigned_udim_status(stage, matches, manifest)
+            matches, assignment_status = _assignment_status(
+                node, library, material_paths, manifest,
+            )
             _set_if_present(node, "assignment_note", assignment_status)
             library.parent().layoutChildren(items=(library,))
         _message(

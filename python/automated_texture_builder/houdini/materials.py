@@ -210,6 +210,12 @@ def clear_generated(library: hou.Node) -> None:
 
 
 def _publish_library(library: hou.Node, material_paths: dict[str, str]) -> dict[str, str]:
+    # Keep the original texture-set names for assignment-only refreshes. Node
+    # names are sanitized and are not always sufficient to reconstruct them.
+    library.setUserData(
+        "automated_texture_builder_material_paths",
+        json.dumps(material_paths, sort_keys=True),
+    )
     count = library.parm("materials")
     if count is not None:
         count.set(len(material_paths))
@@ -661,7 +667,8 @@ def build_materials(
     return _publish_library(library, material_paths)
 
 
-def auto_assign(library: hou.Node, stage, material_paths: dict[str, str], geometry_root: str) -> dict[str, str]:
+def assignment_candidates(stage, geometry_root: str) -> list[tuple[str, bool]]:
+    """Return assignable USD prims below the requested root."""
     candidates = []
     root = stage.GetPrimAtPath(geometry_root) if geometry_root else stage.GetPseudoRoot()
     if root:
@@ -671,11 +678,20 @@ def auto_assign(library: hou.Node, stage, material_paths: dict[str, str], geomet
             in_root = not root_path or path == root_path or path.startswith(root_path + "/")
             if in_root and prim.GetTypeName() in {"Mesh", "GeomSubset"}:
                 candidates.append((path, prim.GetTypeName() == "GeomSubset"))
+    return candidates
+
+
+def auto_assign(library: hou.Node, stage, material_paths: dict[str, str], geometry_root: str) -> dict[str, str]:
+    candidates = assignment_candidates(stage, geometry_root)
     matches = match_materials_to_paths(material_paths, candidates)
     # Material Library uses the same sorted order authored by _publish_library.
     # Bind directly in each material entry instead of creating another LOP.
     for index, set_name in enumerate(sorted(material_paths), 1):
         assigned_path = matches.get(set_name, "")
-        library.parm(f"assign{index}").set(1 if assigned_path else 0)
-        library.parm(f"geopath{index}").set(assigned_path)
+        assign_parm = library.parm(f"assign{index}")
+        path_parm = library.parm(f"geopath{index}")
+        if assign_parm is not None:
+            assign_parm.set(1 if assigned_path else 0)
+        if path_parm is not None:
+            path_parm.set(assigned_path)
     return matches

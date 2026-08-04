@@ -13,6 +13,16 @@ OUTPUT = ROOT / "otls" / "automated_texture_builder.hda"
 TYPE_NAME = "j7s::automated_texture_builder::1.0"
 
 
+def callback_code(call: str) -> str:
+    """Reload editable tool modules so an open Houdini uses the current build."""
+    return (
+        "import importlib; import automated_texture_builder.matching as mt; "
+        "importlib.reload(mt); import automated_texture_builder.houdini.materials as m; "
+        "importlib.reload(m); import automated_texture_builder.houdini.callbacks as c; "
+        f"importlib.reload(c); {call}"
+    )
+
+
 def button(name: str, label: str, callback: str) -> hou.ButtonParmTemplate:
     parm = hou.ButtonParmTemplate(name, label)
     parm.setScriptCallback(callback)
@@ -26,19 +36,13 @@ def explained(parm: hou.ParmTemplate, text: str) -> hou.ParmTemplate:
 
 
 def refresh_callback(parm: hou.ParmTemplate) -> hou.ParmTemplate:
-    parm.setScriptCallback(
-        "import automated_texture_builder.houdini.callbacks as c; "
-        "c.refresh_scene_linear(kwargs['node'])"
-    )
+    parm.setScriptCallback(callback_code("c.refresh_scene_linear(kwargs['node'])"))
     parm.setScriptCallbackLanguage(hou.scriptLanguage.Python)
     return parm
 
 
 def python_callback(parm: hou.ParmTemplate, function_name: str) -> hou.ParmTemplate:
-    parm.setScriptCallback(
-        "import automated_texture_builder.houdini.callbacks as c; "
-        f"c.{function_name}(kwargs['node'])"
-    )
+    parm.setScriptCallback(callback_code(f"c.{function_name}(kwargs['node'])"))
     parm.setScriptCallbackLanguage(hou.scriptLanguage.Python)
     return parm
 
@@ -180,12 +184,17 @@ def build() -> Path:
         "library_name", "Material Library Name", 1, ("$OS",)
     ), "Name of the visible sibling Material Library LOP created in /stage. $OS follows the Automated Texture Builder node name; Houdini adds a numeric suffix when a sibling already uses that exact name."))
     textures.addParmTemplate(hou.SeparatorParmTemplate("sep_assignment"))
+    auto_assign = hou.ToggleParmTemplate("auto_assign", "Assign to Matching USD Meshes", False)
+    auto_assign.setScriptCallback(callback_code("c.update_assignments(kwargs['node'])"))
+    auto_assign.setScriptCallbackLanguage(hou.scriptLanguage.Python)
     textures.addParmTemplate(explained(
-        hou.ToggleParmTemplate("auto_assign", "Assign to Matching USD Meshes", False),
+        auto_assign,
         "Enables Assign to Geometry inside each generated Material Library entry for the best unique name match. Longer matching strings are preferred; ambiguous equal matches remain unassigned.",
     ))
     root = hou.StringParmTemplate("geometry_root", "USD Geometry Root", 1, ("/",))
     root.setConditional(hou.parmCondType.DisableWhen, "{ auto_assign == 0 }")
+    root.setScriptCallback(callback_code("c.update_assignments(kwargs['node'])"))
+    root.setScriptCallbackLanguage(hou.scriptLanguage.Python)
     root.setTags({
         "script_action": "import loputils\nloputils.selectPrimsInParm(kwargs, True, allowinstanceproxies=True)",
         "script_action_help": "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.",
@@ -202,12 +211,12 @@ def build() -> Path:
     ), "Numeric suffixes are preserved, imported prefixes are ignored, and partial matches are checked from longest to shortest. Missing UDIM tiles or st/uv primvars are reported here after the build."))
     textures.addParmTemplate(explained(button(
         "run_all", "Convert, Build and Assign",
-        "import automated_texture_builder.houdini.callbacks as c; c.run(kwargs['node'])",
+        callback_code("c.run(kwargs['node'])"),
     ), "Runs the selected texture workflow, then creates visible Solaris material subnetworks and optionally assigns them."))
     textures.addParmTemplate(hou.SeparatorParmTemplate("sep_delete_sources"))
     delete_button = button(
         "delete_sources", "Delete Original Input Textures",
-        "import automated_texture_builder.houdini.callbacks as c; c.delete_sources(kwargs['node'])",
+        callback_code("c.delete_sources(kwargs['node'])"),
     )
     delete_button.setConditional(
         hou.parmCondType.DisableWhen,
@@ -267,7 +276,7 @@ def build() -> Path:
         color.addParmTemplate(explained(rule, help_text))
     color.addParmTemplate(explained(button(
         "refresh_ocio", "Refresh OCIO Detection",
-        "import automated_texture_builder.houdini.callbacks as c; c.refresh_scene_linear(kwargs['node'], True)",
+        callback_code("c.refresh_scene_linear(kwargs['node'], True)"),
     ), "Refreshes the active config path and scene_linear role without converting textures or building materials."))
     color.addParmTemplate(explained(compact_info(
         "ocio_dev_note", "Dev note",
@@ -278,9 +287,10 @@ def build() -> Path:
     definition.setExtraFileOption("OnCreated/IsPython", True)
     definition.addSection(
         "OnCreated",
-        "import automated_texture_builder.houdini.callbacks as c\n"
-        "c.refresh_scene_linear(kwargs['node'])\n"
-        "c.refresh_maketx_behavior(kwargs['node'])\n",
+        callback_code(
+            "c.refresh_scene_linear(kwargs['node']); "
+            "c.refresh_maketx_behavior(kwargs['node'])"
+        ) + "\n",
     )
     definition.addSection(
         "Help",

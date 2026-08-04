@@ -215,6 +215,11 @@ Bindings are written into each material entry's **Assign to Geometry** and
 **Geometry Path** fields in the generated Material Library LOP. The tool does
 not create a separate Assign Material node.
 
+Changing **Assign to Matching USD Meshes** or **USD Geometry Root** updates an
+existing generated Material Library immediately; texture conversion does not
+need to run again. The status field reports how many assignable USD prims were
+found and warns clearly when none of the texture-set names match.
+
 If downstream Solaris nodes were connected to the Automated Texture Builder
 before the build, they are automatically rewired behind the generated Material
 Library. This prevents the controller's pass-through output from bypassing the
