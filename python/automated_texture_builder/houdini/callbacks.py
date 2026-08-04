@@ -313,6 +313,18 @@ def _solaris_nodes(controller: hou.Node):
     library.parm("matpathprefix").set("/materials/")
     library.parm("genpreviewshaders").set(1)
     library.setPosition(controller.position() + hou.Vector2(0.0, -2.0))
+    # The HDA itself is a pass-through controller while the visible Material
+    # Library is created as its sibling. Move existing downstream consumers
+    # behind the library so they receive the authored materials and bindings.
+    # Without this, a node wired to the controller before Build silently
+    # bypasses the generated Material Library.
+    for connection in list(controller.outputConnections()):
+        downstream = connection.outputNode()
+        if downstream == library:
+            continue
+        downstream.setInput(
+            connection.inputIndex(), library, connection.outputIndex(),
+        )
     # Remove the separate Assign Material LOP produced by older tool versions.
     # Preserve any downstream wiring by reconnecting its consumers to the
     # Material Library, which now authors the bindings itself.

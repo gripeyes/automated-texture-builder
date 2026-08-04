@@ -215,6 +215,11 @@ Bindings are written into each material entry's **Assign to Geometry** and
 **Geometry Path** fields in the generated Material Library LOP. The tool does
 not create a separate Assign Material node.
 
+If downstream Solaris nodes were connected to the Automated Texture Builder
+before the build, they are automatically rewired behind the generated Material
+Library. This prevents the controller's pass-through output from bypassing the
+materials and bindings.
+
 Use the **USD Geometry Root** field to limit matching to a particular part of
 the Solaris scene graph.
 
