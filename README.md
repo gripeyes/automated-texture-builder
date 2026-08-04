@@ -124,9 +124,18 @@ BaseColor, Metalness, Roughness, Normal, SpecularWeight, and Anisotropy export
 as 16-bit half-float OpenEXR. Height exports as 32-bit float OpenEXR for the
 hero displacement workflow. This avoids 8-bit stepping in smooth material
 controls and gives TX conversion a consistent VFX source container. The
-maketx stage preserves the source precision for Height inside the tiled EXR
-`.tx`: 32f remains float and 16f remains half. Other EXR material maps use
-half-float storage.
+maketx stage keeps Height as float32 inside the tiled EXR `.tx`. Other EXR
+material maps preserve half or float storage unless an OCIO color conversion
+requires the source-aware policy described below.
+
+For arbitrary downloaded or externally authored textures, TX storage is chosen
+from both channel meaning and the pixel type reported by OpenImageIO. An 8-bit
+sRGB PNG/JPEG color map is converted to scene-linear and stored as half-float;
+this does not invent precision, but prevents the linearized result from being
+quantized back to 8-bit. A 16-bit color source uses float32 during the OCIO
+conversion. Untransformed Raw maps preserve uint8, uint16, half, or float
+storage, while every height/displacement source is stored as float32. The
+manifest and TX metadata record the detected source and selected output types.
 
 ## Command line
 

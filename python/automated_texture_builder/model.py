@@ -13,6 +13,8 @@ class TextureFile:
     udim: int | None
     source_space: str = ""
     output_space: str = "Raw"
+    source_pixel_type: str = ""
+    output_pixel_type: str = ""
     output: Path | None = None
     status: str = "planned"
     before_info: dict[str, Any] = field(default_factory=dict)
@@ -32,4 +34,3 @@ class TextureSet:
 
     def add(self, texture: TextureFile) -> None:
         self.maps.setdefault(texture.channel, []).append(texture)
-

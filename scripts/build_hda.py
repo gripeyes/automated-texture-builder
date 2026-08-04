@@ -108,9 +108,9 @@ def build() -> Path:
     textures.addParmTemplate(explained(
         compact_info(
             "maketx_behavior", "Texture Processing",
-            "Incremental TX: only missing or outdated files are generated.",
+            "Incremental TX: missing, outdated, or incorrectly stored TX files are generated.",
         ),
-        "Live explanation of the selected source/TX workflow and whether maketx can replace files.",
+        "Live explanation of the selected source/TX workflow. Incremental mode also rebuilds a TX whose stored pixel type does not match the source-aware precision policy.",
     ))
     textures.addParmTemplate(explained(
         hou.ToggleParmTemplate("inspect_images", "Record OIIO Inspection", False),

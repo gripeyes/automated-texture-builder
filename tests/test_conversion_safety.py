@@ -7,6 +7,7 @@ from automated_texture_builder.conversion import (
     COLOR_CHANNELS,
     delete_original_sources,
     delete_sources_for_existing_tx,
+    maketx_output_type,
     maketx_storage_args,
     resolve_existing_tx_root,
 )
@@ -19,16 +20,43 @@ class ConversionSafetyTests(unittest.TestCase):
         self.assertNotIn("subsurface_radius_scale", COLOR_CHANNELS)
         self.assertNotIn("coat_normal", COLOR_CHANNELS)
 
-    def test_maketx_preserves_source_precision_for_height(self):
+    def test_maketx_uses_float_for_every_height_source(self):
         self.assertEqual(
-            maketx_storage_args("height", Path("hero_Height.exr")),
-            ["--format", "exr"],
+            maketx_storage_args("height", Path("hero_Height.png"), "uint8"),
+            ["--format", "exr", "-d", "float"],
+        )
+        self.assertEqual(maketx_output_type("height", "half"), "float")
+
+    def test_eight_bit_color_is_safely_promoted_for_ocio(self):
+        self.assertEqual(
+            maketx_storage_args("base_color", Path("hero_BaseColor.jpg"), "uint8"),
+            ["--format", "exr", "-d", "half"],
         )
 
-    def test_other_exr_maps_remain_half_float(self):
+    def test_sixteen_bit_color_uses_float_for_ocio(self):
         self.assertEqual(
-            maketx_storage_args("specular_roughness", Path("hero_Roughness.exr")),
+            maketx_storage_args("base_color", Path("hero_BaseColor.tif"), "uint16"),
+            ["--format", "exr", "-d", "float"],
+        )
+
+    def test_raw_maps_preserve_integer_storage(self):
+        self.assertEqual(
+            maketx_storage_args("specular_roughness", Path("hero_Roughness.png"), "uint8"),
+            ["--format", "tiff", "-d", "uint8"],
+        )
+        self.assertEqual(
+            maketx_storage_args("normal", Path("hero_Normal.tif"), "uint16"),
+            ["--format", "tiff", "-d", "uint16"],
+        )
+
+    def test_raw_float_maps_preserve_float_class(self):
+        self.assertEqual(
+            maketx_storage_args("specular_roughness", Path("hero_Roughness.exr"), "half"),
             ["--format", "exr", "-d", "half"],
+        )
+        self.assertEqual(
+            maketx_storage_args("specular_roughness", Path("hero_Roughness.exr"), "float"),
+            ["--format", "exr", "-d", "float"],
         )
 
     def test_existing_tx_accepts_parent_or_tx_folder(self):

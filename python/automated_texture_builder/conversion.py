@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -92,13 +93,63 @@ def _output_path(texture: TextureFile, source_root: Path, output_root: Path) -> 
     return (output_root / relative).with_suffix(".tx")
 
 
-def maketx_storage_args(channel: str, source: Path) -> list[str]:
-    """Choose TX pixel storage without discarding displacement precision."""
+def image_pixel_type(path: Path, oiiotool: str | None = None) -> str:
+    """Read the actual source pixel type through OIIO, independent of extension."""
+    executable = oiiotool or shutil.which("oiiotool")
+    if not executable:
+        return ""
+    result = subprocess.run(
+        [executable, "--info", str(path)], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+    )
+    if result.returncode:
+        return ""
+    match = re.search(
+        r"\b\d+\s+channel(?:s)?,\s+"
+        r"(uint8|sint8|int8|uint16|sint16|int16|uint32|sint32|int32|half|float|double)\b",
+        result.stdout, re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    value = match.group(1).lower()
+    return {"int8": "sint8", "int16": "sint16", "int32": "sint32"}.get(value, value)
+
+
+def maketx_output_type(channel: str, source_type: str) -> str:
+    """Choose storage from map semantics and the source's real pixel type."""
+    source_type = source_type.lower()
     if channel == "height":
-        # Let OIIO preserve the source precision: float EXR remains float and
-        # half EXR remains half. Inspecting pixel min/max is not a safe proxy
-        # for the precision needed by a displacement map.
-        return ["--format", "exr"]
+        # Displacement is evaluated geometrically and must never be quantized
+        # down just because an incoming file happened to use integer storage.
+        return "float"
+    if channel in COLOR_CHANNELS:
+        # OCIO color conversion creates linear floating-point values. Half is
+        # sufficient for 8-bit/half inputs; 16-bit and float sources use float
+        # so their extra precision is not discarded during the transform.
+        if source_type in {"uint16", "sint16", "uint32", "sint32", "float", "double"}:
+            return "float"
+        return "half"
+    # Raw numeric/vector maps are not transformed, so preserve their storage
+    # class instead of automatically expanding every downloaded texture.
+    if source_type in {"uint8", "sint8", "uint16", "sint16", "half", "float"}:
+        return source_type
+    if source_type in {"uint32", "sint32", "double"}:
+        return "float"
+    return ""
+
+
+def maketx_storage_args(
+    channel: str, source: Path, source_type: str = "",
+) -> list[str]:
+    """Choose a TX container and type without losing meaningful precision."""
+    output_type = maketx_output_type(channel, source_type)
+    if output_type in {"half", "float"}:
+        return ["--format", "exr", "-d", output_type]
+    if output_type in {"uint8", "sint8", "uint16", "sint16"}:
+        return ["--format", "tiff", "-d", output_type]
+    # Fallback for unusual/unknown inputs: maketx preserves the input type.
+    if channel == "height":
+        return ["--format", "exr", "-d", "float"]
     if channel in COLOR_CHANNELS or source.suffix.lower() == ".exr" or channel == "normal":
         return ["--format", "exr", "-d", "half"]
     return []
@@ -128,12 +179,23 @@ def convert(
             for texture in textures:
                 texture.source_space = classify(config, texture.source)
                 texture.output_space = output_space if channel in COLOR_CHANNELS else "Raw"
+                texture.source_pixel_type = image_pixel_type(texture.source, oiiotool)
+                texture.output_pixel_type = maketx_output_type(channel, texture.source_pixel_type)
                 texture.output = _output_path(texture, source_root, output_root)
                 if inspect_images:
                     texture.before_info = inspect(texture.source, oiiotool)
+                stored_output_type = (
+                    image_pixel_type(texture.output, oiiotool)
+                    if texture.output.exists() else ""
+                )
+                storage_matches = (
+                    not texture.output_pixel_type
+                    or stored_output_type == texture.output_pixel_type
+                )
                 current = (
                     texture.output.exists()
                     and texture.output.stat().st_mtime >= max(texture.source.stat().st_mtime, ocio_path.stat().st_mtime)
+                    and storage_matches
                 )
                 if current and not force:
                     texture.status = "current"
@@ -149,8 +211,14 @@ def convert(
                         maketx, "--oiio", "--checknan", "--filter", "box",
                         "--wrap", "black", "--sattrib", "oiio:ColorSpace", texture.output_space,
                         "--sattrib", "automated_texture_builder:channel", channel,
+                        "--sattrib", "automated_texture_builder:source_pixel_type",
+                        texture.source_pixel_type or "unknown",
+                        "--sattrib", "automated_texture_builder:output_pixel_type",
+                        texture.output_pixel_type or "preserve-input",
                     ]
-                    command += maketx_storage_args(channel, texture.source)
+                    command += maketx_storage_args(
+                        channel, texture.source, texture.source_pixel_type,
+                    )
                     if channel in COLOR_CHANNELS and texture.source_space != texture.output_space:
                         command += [
                             "--colorconfig", str(ocio_path), "--colorconvert",
@@ -320,7 +388,7 @@ def write_manifest(
     sets: dict[str, TextureSet],
 ) -> Path:
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source_root": str(source_root),
         "output_root": str(output_root),

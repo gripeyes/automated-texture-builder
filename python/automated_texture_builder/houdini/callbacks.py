@@ -171,7 +171,7 @@ def refresh_maketx_behavior(node: hou.Node) -> str:
     elif force_enabled:
         text = "Regenerate all TX: every source texture replaces its TX output."
     else:
-        text = "Incremental TX: only missing or outdated files are generated."
+        text = "Incremental TX: missing, outdated, or incorrectly stored TX files are generated."
     parm = node.parm("maketx_behavior")
     if parm is not None:
         parm.set(text)
