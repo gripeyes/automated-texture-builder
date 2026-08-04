@@ -127,6 +127,25 @@ Artists should normally leave **Use Current Houdini OCIO** enabled.
 The tool reads the active OCIO configuration and its `scene_linear` role. Color
 textures are converted to that scene-linear space when TX files are generated.
 Data maps such as roughness, metalness, normal and displacement remain Raw.
+
+### Height and displacement
+
+Painter height pixels do not carry a dependable real-world displacement
+distance. Connecting them to a displacement node at its default scale of 1 can
+move points by one full scene unit and severely enlarge or break an asset.
+
+The tool therefore authors two explicit controls:
+
+- **Height / Displacement Scale** defaults to `0.01`. MaterialX and MoonRay use
+  it in scene units; Native Arnold uses it as bump strength.
+- **Height Zero Level** defaults to `0.0`, matching the signed floating-point
+  height values preserved by the included Painter preset. Set it to `0.5` for
+  a normalized height texture where middle gray is flat.
+
+The MaterialX graph subtracts the zero level before MtlX Displacement applies
+the scale. MoonRay receives the equivalent `zero_value` and
+`height_multiplier` settings. These values remain artist controls because
+texture pixels alone cannot determine the intended physical displacement.
 Generated TX files are also read as Raw because their color conversion is
 already baked in; this prevents a second transform.
 

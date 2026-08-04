@@ -154,6 +154,16 @@ def build() -> Path:
         ("Automatic / UDIM", "Repeating Texture (USD Transform 2D)"),
         default_value=0,
     ), "Automatic / UDIM uses MtlX Image and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D across regular MtlX Image nodes with periodic wrapping, providing UV scale, rotation and translation."))
+    textures.addParmTemplate(explained(hou.FloatParmTemplate(
+        "height_scale", "Height / Displacement Scale", 1, (0.01,),
+    ), "Maximum height strength applied by the generated material. MaterialX and MoonRay displacement interpret this in scene units; Native Arnold uses it as bump strength. Painter height values do not contain a reliable real-world distance, so adjust this for the asset's scale."))
+    textures.addParmTemplate(explained(hou.FloatParmTemplate(
+        "height_zero", "Height Zero Level", 1, (0.0,),
+    ), "Texture value that leaves the surface unchanged. The included floating-point Substance Painter preset preserves signed height around 0. Use 0.5 for a conventional normalized black-to-white height map whose neutral value is middle gray."))
+    textures.addParmTemplate(explained(compact_info(
+        "height_note", "Height Handling",
+        "Height is centered around the zero level, then multiplied by the explicit scale.",
+    ), "This prevents a 0-1 texture from moving geometry by a full scene unit. True displacement also requires suitable tessellation and displacement bounds on the rendered geometry."))
     textures.addParmTemplate(explained(hou.StringParmTemplate(
         "library_name", "Material Library Name", 1, ("$OS",)
     ), "Name of the visible sibling Material Library LOP created in /stage. $OS follows the Automated Texture Builder node name; Houdini adds a numeric suffix when a sibling already uses that exact name."))

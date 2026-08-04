@@ -237,7 +237,7 @@ def _arnold_image(builder: hou.Node, name: str, item: dict, texture_mode: str) -
 
 
 def _build_arnold_native(
-    library: hou.Node, data: dict, texture_mode: str,
+    library: hou.Node, data: dict, texture_mode: str, height_scale: float,
 ) -> dict[str, str]:
     clear_generated(library)
     material_paths: dict[str, str] = {}
@@ -316,6 +316,7 @@ def _build_arnold_native(
             image = _arnold_image(builder, "height", maps["height"], texture_mode)
             image.parm("color_space").set("Raw")
             bump = builder.createNode("arnold::bump2d", "height_bump")
+            bump.parm("bump_height").set(height_scale)
             _connect_output(bump, "bump_map", image, "r")
             if normal_node is not None:
                 _connect(bump, "normal", normal_node)
@@ -376,6 +377,7 @@ def _moonray_image(
 
 def _build_moonray(
     library: hou.Node, data: dict, texture_mode: str,
+    height_scale: float, height_zero: float,
 ) -> dict[str, str]:
     _ensure_moonray_types()
     clear_generated(library)
@@ -444,6 +446,8 @@ def _build_moonray(
             height_image = _moonray_image(builder, "height_image", maps["height"], texture_mode)
             height_red = builder.createNode(MOONRAY_TYPES["to_float"], "height_red")
             displacement = builder.createNode(MOONRAY_TYPES["displacement"], "height_displacement")
+            displacement.parm("zero_value").set(height_zero)
+            displacement.parm("height_multiplier").set(height_scale)
             displacement_output = _moonray_connector(builder, "displacement", "Displacement", 25)
             _connect(height_red, "input", height_image)
             _connect(displacement, "height", height_red)
@@ -473,12 +477,14 @@ def build_materials(
     surface_model: str = "openpbr",
     texture_mode: str = "auto",
     uv_primvar: str = "st",
+    height_scale: float = 0.01,
+    height_zero: float = 0.0,
 ) -> dict[str, str]:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     if profile == "arnold_native":
-        return _build_arnold_native(library, data, texture_mode)
+        return _build_arnold_native(library, data, texture_mode, height_scale)
     if profile == "moonray":
-        return _build_moonray(library, data, texture_mode)
+        return _build_moonray(library, data, texture_mode, height_scale, height_zero)
     clear_generated(library)
     material_paths: dict[str, str] = {}
     input_map = OPENPBR_INPUTS if surface_model == "openpbr" else STANDARD_INPUTS
@@ -570,9 +576,15 @@ def build_materials(
                 builder, "height", maps["height"]["path"], "float",
                 uv, texture_mode, "Raw", uv_transform,
             )
+            centered_height = builder.createNode("mtlxsubtract", "height_zero_level")
+            centered_height.parm("signature").set("float")
+            centered_height.parm("in2").set(height_zero)
+            _connect(centered_height, "in1", height)
+            displacement.parm("scale").set(height_scale)
             height.setPosition(hou.Vector2(-4.5, -5.0))
+            centered_height.setPosition(hou.Vector2(-3.0, -5.0))
             displacement.setPosition(hou.Vector2(-1.5, -5.0))
-            _connect(displacement, "displacement", height)
+            _connect(displacement, "displacement", centered_height)
         builder.layoutChildren()
         builder.setPosition(hou.Vector2(float(index % 4) * 4.0, -float(index // 4) * 3.0))
         material_paths[set_name] = "/materials/" + builder.name()

@@ -374,6 +374,8 @@ def run(node: hou.Node) -> None:
                 _menu(node, "surface_model"),
                 _menu(node, "texture_mode"),
                 "st",
+                float(node.evalParm("height_scale")),
+                float(node.evalParm("height_zero")),
             )
             matches = {}
             assignment_status = "Automatic assignment disabled."
