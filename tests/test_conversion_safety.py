@@ -6,11 +6,24 @@ import unittest
 from automated_texture_builder.conversion import (
     delete_original_sources,
     delete_sources_for_existing_tx,
+    maketx_storage_args,
     resolve_existing_tx_root,
 )
 
 
 class ConversionSafetyTests(unittest.TestCase):
+    def test_maketx_preserves_full_float_height(self):
+        self.assertEqual(
+            maketx_storage_args("height", Path("hero_Height.exr")),
+            ["--format", "exr", "-d", "float"],
+        )
+
+    def test_other_exr_maps_remain_half_float(self):
+        self.assertEqual(
+            maketx_storage_args("specular_roughness", Path("hero_Roughness.exr")),
+            ["--format", "exr", "-d", "half"],
+        )
+
     def test_existing_tx_accepts_parent_or_tx_folder(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory)

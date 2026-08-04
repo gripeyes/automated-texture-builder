@@ -105,7 +105,9 @@ accepts both spellings.
 BaseColor, Metalness, Roughness, Normal, SpecularWeight, and Anisotropy export
 as 16-bit half-float OpenEXR. Height exports as 32-bit float OpenEXR for the
 hero displacement workflow. This avoids 8-bit stepping in smooth material
-controls and gives TX conversion a consistent VFX source container.
+controls and gives TX conversion a consistent VFX source container. The
+maketx stage preserves Height as full-float tiled EXR data inside the `.tx`;
+other EXR material maps use half-float storage.
 
 ## Command line
 

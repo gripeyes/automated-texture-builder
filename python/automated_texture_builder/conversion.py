@@ -91,6 +91,15 @@ def _output_path(texture: TextureFile, source_root: Path, output_root: Path) -> 
     return (output_root / relative).with_suffix(".tx")
 
 
+def maketx_storage_args(channel: str, source: Path) -> list[str]:
+    """Choose TX pixel storage without discarding displacement precision."""
+    if channel == "height":
+        return ["--format", "exr", "-d", "float"]
+    if channel in COLOR_CHANNELS or source.suffix.lower() == ".exr" or channel == "normal":
+        return ["--format", "exr", "-d", "half"]
+    return []
+
+
 def convert(
     source_root: Path,
     output_root: Path | None = None,
@@ -137,8 +146,7 @@ def convert(
                         "--wrap", "black", "--sattrib", "oiio:ColorSpace", texture.output_space,
                         "--sattrib", "automated_texture_builder:channel", channel,
                     ]
-                    if channel in COLOR_CHANNELS or texture.source.suffix.lower() == ".exr" or channel == "normal":
-                        command += ["--format", "exr", "-d", "half"]
+                    command += maketx_storage_args(channel, texture.source)
                     if channel in COLOR_CHANNELS and texture.source_space != texture.output_space:
                         command += [
                             "--colorconfig", str(ocio_path), "--colorconvert",
