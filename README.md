@@ -14,7 +14,7 @@ Karma, Arnold and MoonRay materials.
 2. Press Tab and create **Automated Texture Builder**.
 3. Choose a **Texture Workflow** and select the **Texture Folder**.
 4. Choose the material builder and surface model you want.
-5. Choose **Automatic / UDIM** or **Repeating Tiled Image**.
+5. Choose the UV, tiled, or triplanar texture mode you need.
 6. Click **Convert, Build and Assign**.
 
 The tool creates a visible Material Library LOP beside the controller. Inside
@@ -124,9 +124,17 @@ The bundled Substance Painter preset produces compatible names automatically.
   same randomized lookup. This mode is available for the MaterialX builder
   profiles. Native Arnold and MoonRay do not expose an equivalent portable hex
   lookup here, so the tool rejects that combination with a clear message.
+- **Triplanar Projection** projects textures in object space without requiring
+  usable mesh UVs.
+- **Triplanar with Pattern Breakup** adds randomized neighboring cells to hide
+  obvious repetition. Karma uses its dedicated hex-triplanar color and normal
+  lookups; Arnold uses its native triplanar shader and cell breakup. Both modes
+  are supported by Karma, Arnold USD MaterialX, and native Arnold. Generic USD
+  MaterialX and MoonRay are rejected because Houdini 22 does not provide a
+  renderer-correct triplanar normal-map path for those profiles.
 
-Every MaterialX image receives an explicit UV connection. The default USD UV
-primvar is `st`.
+UV-based MaterialX images receive an explicit UV connection. Triplanar modes
+use object-space position and normals instead, so they do not depend on `st`.
 
 ## Color management
 

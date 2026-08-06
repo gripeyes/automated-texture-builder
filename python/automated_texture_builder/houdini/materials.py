@@ -149,8 +149,60 @@ def _uv_node(builder: hou.Node, uv_primvar: str) -> hou.Node:
 def _image(
     parent: hou.Node, name: str, path: str, signature: str,
     uv: hou.Node, texture_mode: str, lookup_space: str = "Raw",
-    uv_transform: hou.Node | None = None,
+    uv_transform: hou.Node | None = None, profile: str = "generic",
 ) -> hou.Node:
+    if texture_mode in {"triplanar", "triplanar_breakup"}:
+        breakup = texture_mode == "triplanar_breakup"
+        if profile == "karma":
+            source_name = name + "_triplanar_source"
+            source = parent.createNode("kma_hextiled_triplanar", source_name)
+            source.parm("file").set(path)
+            source.parm("sourceColorSpace").set(
+                "raw" if lookup_space.lower() == "raw" else "auto"
+            )
+            # Zero randomization makes this the predictable/plain projection;
+            # the breakup mode deliberately varies neighboring hex cells.
+            source.parm("rand_scale").set(0.12 if breakup else 0.0)
+            source.parm("rand_rot").set(0.5 if breakup else 0.0)
+            if signature == "float":
+                channel = parent.createNode("mtlxseparate4v", name)
+                _connect(channel, "in", source)
+                return channel
+            if signature in {"color3", "vector3"}:
+                converted = parent.createNode("mtlxconvert", name)
+                converted.parm("signature").set(
+                    "vector4color3" if signature == "color3" else "vector4vector3"
+                )
+                _connect(converted, "in", source)
+                return converted
+            return source
+        if profile == "arnold":
+            source = parent.createNode("mtlximage", name + "_triplanar_source")
+            source.parm("signature").set("color3")
+            source.parm("file").set(path)
+            if source.parm("filecolorspace"):
+                source.parm("filecolorspace").set(lookup_space)
+            projection = parent.createNode("arnold::mtlxtriplanar", name + "_projection")
+            _connect(projection, "input", source)
+            projection.parm("coord_space").set(1)  # object space
+            projection.parm("cell").set(1 if breakup else 0)
+            if breakup:
+                projection.parm("cell_rotate").set(1.0)
+                projection.parm("cell_blend").set(0.1)
+            if signature == "float":
+                channel = parent.createNode("mtlxseparate3c", name)
+                _connect(channel, "in", projection)
+                return channel
+            if signature == "vector3":
+                converted = parent.createNode("mtlxconvert", name)
+                converted.parm("signature").set("color3vector3")
+                _connect(converted, "in", projection)
+                return converted
+            return projection
+        raise RuntimeError(
+            "Triplanar projection with correct tangent-space normals requires "
+            "a Karma or Arnold material builder in Houdini 22."
+        )
     if texture_mode == "hex":
         source_name = name if signature == "color3" else name + "_hex_source"
         source = parent.createNode("mtlxhextiledimage", source_name)
@@ -182,7 +234,7 @@ def _image(
 
 def _normal_texture(
     parent: hou.Node, name: str, path: str, uv: hou.Node,
-    texture_mode: str, uv_transform: hou.Node | None,
+    texture_mode: str, uv_transform: hou.Node | None, profile: str = "generic",
 ) -> hou.Node:
     """Create a normal lookup appropriate for ordinary or hex-broken UV tiling."""
     if texture_mode == "hex":
@@ -192,9 +244,21 @@ def _normal_texture(
             normal.parm("filecolorspace").set("Raw")
         _connect(normal, "texcoord", uv_transform or uv)
         return normal
+    if texture_mode in {"triplanar", "triplanar_breakup"} and profile == "karma":
+        normal = parent.createNode("kma_hextiled_triplanar", name)
+        normal.parm("signature").set("normals")
+        normal.parm("file").set(path)
+        normal.parm("sourceColorSpace").set("raw")
+        normal.parm("rand_scale").set(
+            0.12 if texture_mode == "triplanar_breakup" else 0.0
+        )
+        normal.parm("rand_rot").set(
+            0.5 if texture_mode == "triplanar_breakup" else 0.0
+        )
+        return normal
     image = _image(
         parent, name + "_image", path, "vector3", uv,
-        texture_mode, "Raw", uv_transform,
+        texture_mode, "Raw", uv_transform, profile,
     )
     normal = parent.createNode("mtlxnormalmap", name)
     _connect(normal, "in", image)
@@ -278,7 +342,24 @@ def _arnold_image(builder: hou.Node, name: str, item: dict, texture_mode: str) -
     if texture_mode == "repeat":
         image.parm("swrap").set("periodic")
         image.parm("twrap").set("periodic")
-    return image
+    if texture_mode not in {"triplanar", "triplanar_breakup"}:
+        return image
+    projection = builder.createNode("arnold::triplanar", name + "_triplanar")
+    _connect_output(projection, "input", image, "rgba")
+    projection.parm("coord_space").set("object")
+    breakup = texture_mode == "triplanar_breakup"
+    projection.parm("cell").set(1 if breakup else 0)
+    if breakup:
+        projection.parm("cell_rotate").set(1.0)
+        projection.parm("cell_blend").set(0.1)
+    return projection
+
+
+def _arnold_texture_output(texture_mode: str, output_name: str) -> str:
+    """Translate Image outputs to Arnold Triplanar outputs."""
+    if texture_mode in {"triplanar", "triplanar_breakup"} and output_name == "rgba":
+        return "rgb"
+    return output_name
 
 
 def _build_arnold_native(
@@ -340,28 +421,40 @@ def _build_arnold_native(
                 continue
             image = _arnold_image(builder, channel, maps[channel], texture_mode)
             image.setPosition(hou.Vector2(-4.5, 5.0 - offset * 1.0))
-            _connect_output(surface, input_name, image, output_name)
+            _connect_output(
+                surface, input_name, image,
+                _arnold_texture_output(texture_mode, output_name),
+            )
         if "thin_walled" in maps or "translucency_weight" in maps or "translucency_color" in maps:
             parm = surface.parm("thin_walled")
             if parm is not None:
                 parm.set(1)
         if "normal" in maps:
             image = _arnold_image(builder, "normal_image", maps["normal"], texture_mode)
-            image.parm("color_space").set("Raw")
+            if image.parm("color_space"):
+                image.parm("color_space").set("Raw")
             normal = builder.createNode("arnold::normal_map", "normal")
-            _connect_output(normal, "input", image, "rgba")
+            _connect_output(
+                normal, "input", image,
+                _arnold_texture_output(texture_mode, "rgba"),
+            )
             _connect(surface, "normal", normal)
             normal_node = normal
         if "coat_normal" in maps and "coat_normal" in surface.inputNames():
             image = _arnold_image(builder, "coat_normal_image", maps["coat_normal"], texture_mode)
-            image.parm("color_space").set("Raw")
+            if image.parm("color_space"):
+                image.parm("color_space").set("Raw")
             coat_normal = builder.createNode("arnold::normal_map", "coat_normal")
-            _connect_output(coat_normal, "input", image, "rgba")
+            _connect_output(
+                coat_normal, "input", image,
+                _arnold_texture_output(texture_mode, "rgba"),
+            )
             _connect(surface, "coat_normal", coat_normal)
         bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
         if bump_channel:
             image = _arnold_image(builder, bump_channel, maps[bump_channel], texture_mode)
-            image.parm("color_space").set("Raw")
+            if image.parm("color_space"):
+                image.parm("color_space").set("Raw")
             bump = builder.createNode("arnold::bump2d", bump_channel + "_bump")
             bump.parm("bump_height").set(bump_scale)
             _connect_output(bump, "bump_map", image, "r")
@@ -373,14 +466,18 @@ def _build_arnold_native(
             image = _arnold_image(
                 builder, displacement_channel, maps[displacement_channel], texture_mode,
             )
-            image.parm("color_space").set("Raw")
+            if image.parm("color_space"):
+                image.parm("color_space").set("Raw")
             centered = builder.createNode("arnold::subtract", displacement_channel + "_zero_level")
             scaled = builder.createNode("arnold::multiply", displacement_channel + "_scale")
             for component in "rgb":
                 centered.parm("input2" + component).set(height_zero)
                 scaled.parm("input2" + component).set(height_scale)
             output_name = "rgb" if vector else "r"
-            _connect_output(centered, "input1", image, "rgba" if vector else "r")
+            _connect_output(
+                centered, "input1", image,
+                _arnold_texture_output(texture_mode, "rgba" if vector else "r"),
+            )
             _connect_output(scaled, "input1", centered, output_name)
             _connect_output(output, "displacement", scaled, output_name)
         builder.layoutChildren()
@@ -573,6 +670,12 @@ def build_materials(
             "Choose a USD MaterialX, Karma, or Arnold USD MaterialX builder, "
             "or use Repeating Texture for native Arnold and MoonRay."
         )
+    if texture_mode in {"triplanar", "triplanar_breakup"} and profile in {"generic", "moonray"}:
+        raise RuntimeError(
+            "Triplanar modes are available for Karma, Arnold USD MaterialX, "
+            "and native Arnold. Generic MaterialX and MoonRay do not provide "
+            "a renderer-correct triplanar normal-map projection in this Houdini build."
+        )
     if profile == "arnold_native":
         return _build_arnold_native(
             library, data, texture_mode, height_scale, height_zero, detail_mode,
@@ -602,7 +705,7 @@ def build_materials(
             image = _image(
                 builder, channel, path, signature, uv, texture_mode,
                 maps[channel].get("lookup_space", "Raw"),
-                uv_transform,
+                uv_transform, profile,
             )
             image.setPosition(hou.Vector2(-4.5, 5.0 - offset * 1.1))
             _connect(surface, input_name, image)
@@ -615,7 +718,7 @@ def build_materials(
                     continue
                 tangent = _image(
                     builder, channel, maps[channel]["path"], "vector3", uv,
-                    texture_mode, "Raw", uv_transform,
+                    texture_mode, "Raw", uv_transform, profile,
                 )
                 _connect(surface, input_name, tangent)
             for channel, input_name in (
@@ -627,14 +730,14 @@ def build_materials(
                     continue
                 angle = _image(
                     builder, channel, maps[channel]["path"], "float", uv,
-                    texture_mode, "Raw", uv_transform,
+                    texture_mode, "Raw", uv_transform, profile,
                 )
                 _connect(surface, input_name, _angle_to_tangent(builder, angle, channel))
         thin_walled_input = "geometry_thin_walled" if surface_model == "openpbr" else "thin_walled"
         if "thin_walled" in maps:
             mask = _image(
                 builder, "thin_walled", maps["thin_walled"]["path"], "float",
-                uv, texture_mode, "Raw", uv_transform,
+                uv, texture_mode, "Raw", uv_transform, profile,
             )
             compare = builder.createNode("mtlxcompare", "thin_walled_threshold")
             compare.parm("test").set(3)  # greater than
@@ -653,7 +756,7 @@ def build_materials(
         if "normal" in maps:
             normal = _normal_texture(
                 builder, "normal", maps["normal"]["path"], uv,
-                texture_mode, uv_transform,
+                texture_mode, uv_transform, profile,
             )
             normal.setPosition(hou.Vector2(-1.5, -3.0))
             _connect(surface, "geometry_normal" if surface_model == "openpbr" else "normal", normal)
@@ -661,14 +764,14 @@ def build_materials(
         if "coat_normal" in maps:
             normal = _normal_texture(
                 builder, "coat_normal", maps["coat_normal"]["path"], uv,
-                texture_mode, uv_transform,
+                texture_mode, uv_transform, profile,
             )
             _connect(surface, "geometry_coat_normal" if surface_model == "openpbr" else "coat_normal", normal)
         bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
         if bump_channel:
             height = _image(
                 builder, bump_channel, maps[bump_channel]["path"], "float",
-                uv, texture_mode, "Raw", uv_transform,
+                uv, texture_mode, "Raw", uv_transform, profile,
             )
             bump = builder.createNode("mtlxbump", bump_channel + "_bump")
             bump.parm("scale").set(bump_scale)
@@ -683,7 +786,7 @@ def build_materials(
             displacement_image = _image(
                 builder, displacement_channel, maps[displacement_channel]["path"],
                 "vector3" if vector else "float",
-                uv, texture_mode, "Raw", uv_transform,
+                uv, texture_mode, "Raw", uv_transform, profile,
             )
             centered_height = builder.createNode("mtlxsubtract", "height_zero_level")
             centered_height.parm("signature").set("vector3" if vector else "float")

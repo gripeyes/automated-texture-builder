@@ -157,14 +157,16 @@ def build() -> Path:
     ))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "texture_mode", "Texture Mode",
-        ("auto", "repeat", "hex"),
+        ("auto", "repeat", "hex", "triplanar", "triplanar_breakup"),
         (
             "Automatic / UDIM",
             "Repeating Texture (USD Transform 2D)",
             "Tiled Texture with Hex Pattern Breakup",
+            "Triplanar Projection",
+            "Triplanar with Pattern Breakup",
         ),
         default_value=0,
-    ), "Automatic / UDIM uses MtlX Image and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D across regular MtlX Image nodes. Hex Pattern Breakup uses the MaterialX 1.39 hex image and normal-map nodes to reduce visible repetition; it is available for the MaterialX builder profiles."))
+    ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D. Hex Pattern Breakup reduces repetition in UV-mapped materials. Triplanar projects in object space without requiring UVs; its breakup variant randomizes neighboring cells. Triplanar is supported by Karma, Arnold USD MaterialX, and native Arnold so normal maps use renderer-correct projection."))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "geometry_detail_mode", "Height / Displacement Mode",
         ("auto", "bump", "displacement", "off"),
@@ -319,9 +321,10 @@ translucency, subsurface, fuzz, coat, thin-film, opacity, emission, normals,
 tangents and displacement.
 
 Choose OpenPBR Surface or MaterialX Standard Surface, and choose a generic,
-Karma, Arnold, native Arnold, or MoonRay material builder. Every texture gets
-an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles;
-Repeating mode adds a shared MtlX USD Transform 2D.
+Karma, Arnold, native Arnold, or MoonRay material builder. UV-based textures
+get an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles;
+Repeating mode adds a shared MtlX USD Transform 2D. Triplanar modes project
+textures in object space without UVs; the breakup variant reduces repetition.
 Hex Pattern Breakup adds MaterialX 1.39 hex image and normal-map lookups to
 reduce obvious UV repetition.
 
