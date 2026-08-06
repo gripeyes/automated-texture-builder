@@ -151,6 +151,23 @@ def _image(
     uv: hou.Node, texture_mode: str, lookup_space: str = "Raw",
     uv_transform: hou.Node | None = None,
 ) -> hou.Node:
+    if texture_mode == "hex":
+        source_name = name if signature == "color3" else name + "_hex_source"
+        source = parent.createNode("mtlxhextiledimage", source_name)
+        source.parm("file").set(path)
+        if source.parm("filecolorspace"):
+            source.parm("filecolorspace").set(lookup_space)
+        _connect(source, "texcoord", uv_transform or uv)
+        if signature == "float":
+            channel = parent.createNode("mtlxseparate3c", name)
+            _connect(channel, "in", source)
+            return channel
+        if signature == "vector3":
+            converted = parent.createNode("mtlxconvert", name)
+            converted.parm("signature").set("color3vector3")
+            _connect(converted, "in", source)
+            return converted
+        return source
     node = parent.createNode("mtlximage", name)
     node.parm("signature").set(signature)
     node.parm("file").set(path)
@@ -163,8 +180,29 @@ def _image(
     return node
 
 
+def _normal_texture(
+    parent: hou.Node, name: str, path: str, uv: hou.Node,
+    texture_mode: str, uv_transform: hou.Node | None,
+) -> hou.Node:
+    """Create a normal lookup appropriate for ordinary or hex-broken UV tiling."""
+    if texture_mode == "hex":
+        normal = parent.createNode("mtlxhextilednormalmap", name)
+        normal.parm("file").set(path)
+        if normal.parm("filecolorspace"):
+            normal.parm("filecolorspace").set("Raw")
+        _connect(normal, "texcoord", uv_transform or uv)
+        return normal
+    image = _image(
+        parent, name + "_image", path, "vector3", uv,
+        texture_mode, "Raw", uv_transform,
+    )
+    normal = parent.createNode("mtlxnormalmap", name)
+    _connect(normal, "in", image)
+    return normal
+
+
 def _uv_transform_node(builder: hou.Node, uv: hou.Node) -> hou.Node:
-    """One shared USD-compatible 2D transform for all repeating image maps."""
+    """One shared USD-compatible 2D transform for all UV-tiled image maps."""
     transform = builder.createNode("mtlxUsdTransform2d", "uv_transform2d")
     _connect(transform, "in", uv)
     transform.parm("scalex").set(1.0)
@@ -529,6 +567,12 @@ def build_materials(
     bump_scale: float = 1.0,
 ) -> dict[str, str]:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if texture_mode == "hex" and profile in {"arnold_native", "moonray"}:
+        raise RuntimeError(
+            "Hex Pattern Breakup uses MaterialX 1.39 Hex Tiled Image nodes. "
+            "Choose a USD MaterialX, Karma, or Arnold USD MaterialX builder, "
+            "or use Repeating Texture for native Arnold and MoonRay."
+        )
     if profile == "arnold_native":
         return _build_arnold_native(
             library, data, texture_mode, height_scale, height_zero, detail_mode,
@@ -549,15 +593,14 @@ def build_materials(
         surface.setPosition(hou.Vector2(1.0, 1.0))
         displacement = builder.node("mtlxdisplacement")
         uv = _uv_node(builder, uv_primvar)
-        uv_transform = _uv_transform_node(builder, uv) if texture_mode == "repeat" else None
+        uv_transform = _uv_transform_node(builder, uv) if texture_mode in {"repeat", "hex"} else None
         maps = texture_set["maps"]
         for offset, (channel, (input_name, signature)) in enumerate(input_map.items()):
             if channel not in maps or input_name not in surface.inputNames():
                 continue
             path = maps[channel]["path"]
-            mode = "repeat" if texture_mode == "repeat" else "image"
             image = _image(
-                builder, channel, path, signature, uv, mode,
+                builder, channel, path, signature, uv, texture_mode,
                 maps[channel].get("lookup_space", "Raw"),
                 uv_transform,
             )
@@ -608,23 +651,18 @@ def build_materials(
             )
         normal_result = None
         if "normal" in maps:
-            image = _image(
-                builder, "normal_image", maps["normal"]["path"], "vector3",
-                uv, texture_mode, "Raw", uv_transform,
+            normal = _normal_texture(
+                builder, "normal", maps["normal"]["path"], uv,
+                texture_mode, uv_transform,
             )
-            normal = builder.createNode("mtlxnormalmap", "normal")
-            image.setPosition(hou.Vector2(-4.5, -3.0))
             normal.setPosition(hou.Vector2(-1.5, -3.0))
-            _connect(normal, "in", image)
             _connect(surface, "geometry_normal" if surface_model == "openpbr" else "normal", normal)
             normal_result = normal
         if "coat_normal" in maps:
-            image = _image(
-                builder, "coat_normal_image", maps["coat_normal"]["path"], "vector3",
-                uv, texture_mode, "Raw", uv_transform,
+            normal = _normal_texture(
+                builder, "coat_normal", maps["coat_normal"]["path"], uv,
+                texture_mode, uv_transform,
             )
-            normal = builder.createNode("mtlxnormalmap", "coat_normal")
-            _connect(normal, "in", image)
             _connect(surface, "geometry_coat_normal" if surface_model == "openpbr" else "coat_normal", normal)
         bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
         if bump_channel:

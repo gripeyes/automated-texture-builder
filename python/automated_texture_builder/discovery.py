@@ -10,7 +10,7 @@ SUPPORTED = {".bmp", ".exr", ".hdr", ".jpeg", ".jpg", ".png", ".tga", ".tif", ".
 UDIM_RE = re.compile(r"(?<!\d)(1\d{3})(?!\d)")
 CHANNEL_RE = re.compile(
     r"(?:^|[_\-.])(?P<channel>"
-    r"base[_ ]?color|albedo|base[_ ]?metalness|metallic|metalness|"
+    r"base[_ ]?color|albedo|color|base[_ ]?metalness|metallic|metalness|"
     r"base[_ ]?weight|base[_ ]?diffuse[_ ]?roughness|diffuse[_ ]?roughness|"
     r"specular[_ ]?weight|specular[_ ]?level|specularlevel|"
     r"specular[_ ]?roughness[_ ]?anisotropy|specular[_ ]?anisotropy[_ ]?angle|"
@@ -42,6 +42,7 @@ ALIASES = {
     "basecolor": "base_color",
     "base_color": "base_color",
     "albedo": "base_color",
+    "color": "base_color",
     "baseweight": "base_weight",
     "base_weight": "base_weight",
     "diffuseroughness": "base_diffuse_roughness",

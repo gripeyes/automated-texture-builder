@@ -43,6 +43,8 @@ set names and USD mesh names are related.
 The OpenPBR workflow recognizes the practical OpenPBR 1.1 texture set. It also
 understands common aliases such as `Albedo`, `Metallic`, `Metalness`,
 `Roughness`, `Sheen`, `Translucency`, and Painter's longer OpenPBR names.
+Downloaded texture libraries that use a plain `_Color` suffix are treated as
+Base Color as well.
 
 ## Texture workflows
 
@@ -116,6 +118,12 @@ The bundled Substance Painter preset produces compatible names automatically.
 - **Repeating Tiled Image** uses a shared MtlX USD Transform 2D node for scale,
   rotation and translation, then feeds regular MaterialX Image nodes with
   periodic wrapping.
+- **Tiled Texture with Hex Pattern Breakup** uses the shared USD Transform 2D
+  plus MaterialX 1.39 Hex Tiled Image nodes. Normal textures use the dedicated
+  Hex Tiled Normal Map node, while scalar maps take the red channel from the
+  same randomized lookup. This mode is available for the MaterialX builder
+  profiles. Native Arnold and MoonRay do not expose an equivalent portable hex
+  lookup here, so the tool rejects that combination with a clear message.
 
 Every MaterialX image receives an explicit UV connection. The default USD UV
 primvar is `st`.

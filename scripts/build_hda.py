@@ -16,8 +16,11 @@ TYPE_NAME = "j7s::automated_texture_builder::1.0"
 def callback_code(call: str) -> str:
     """Reload editable tool modules so an open Houdini uses the current build."""
     return (
-        "import importlib; import automated_texture_builder.matching as mt; "
-        "importlib.reload(mt); import automated_texture_builder.houdini.materials as m; "
+        "import importlib; import automated_texture_builder.discovery as d; "
+        "importlib.reload(d); import automated_texture_builder.geometry_detail as gd; "
+        "importlib.reload(gd); import automated_texture_builder.matching as mt; "
+        "importlib.reload(mt); import automated_texture_builder.conversion as cv; "
+        "importlib.reload(cv); import automated_texture_builder.houdini.materials as m; "
         "importlib.reload(m); import automated_texture_builder.houdini.callbacks as c; "
         f"importlib.reload(c); {call}"
     )
@@ -154,10 +157,14 @@ def build() -> Path:
     ))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "texture_mode", "Texture Mode",
-        ("auto", "repeat"),
-        ("Automatic / UDIM", "Repeating Texture (USD Transform 2D)"),
+        ("auto", "repeat", "hex"),
+        (
+            "Automatic / UDIM",
+            "Repeating Texture (USD Transform 2D)",
+            "Tiled Texture with Hex Pattern Breakup",
+        ),
         default_value=0,
-    ), "Automatic / UDIM uses MtlX Image and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D across regular MtlX Image nodes with periodic wrapping, providing UV scale, rotation and translation."))
+    ), "Automatic / UDIM uses MtlX Image and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D across regular MtlX Image nodes. Hex Pattern Breakup uses the MaterialX 1.39 hex image and normal-map nodes to reduce visible repetition; it is available for the MaterialX builder profiles."))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "geometry_detail_mode", "Height / Displacement Mode",
         ("auto", "bump", "displacement", "off"),
@@ -315,6 +322,8 @@ Choose OpenPBR Surface or MaterialX Standard Surface, and choose a generic,
 Karma, Arnold, native Arnold, or MoonRay material builder. Every texture gets
 an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles;
 Repeating mode adds a shared MtlX USD Transform 2D.
+Hex Pattern Breakup adds MaterialX 1.39 hex image and normal-map lookups to
+reduce obvious UV repetition.
 
 Leave Houdini OCIO enabled unless the project requires another config. Color
 maps are converted to scene-linear; data maps and completed TX files stay Raw.

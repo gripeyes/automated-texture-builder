@@ -6,6 +6,12 @@ from automated_texture_builder.discovery import parse_texture, scan, udim_patter
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_plain_color_suffix_is_base_color(self):
+        texture = parse_texture(Path("Plastic011_4K-PNG_Color.png"))
+        self.assertIsNotNone(texture)
+        self.assertEqual(texture.texture_set, "Plastic011_4K-PNG")
+        self.assertEqual(texture.channel, "base_color")
+
     def test_core_material_channels(self):
         cases = {
             "hero_helmet_BaseColor_Linear Rec.2020.1001.exr": "base_color",
