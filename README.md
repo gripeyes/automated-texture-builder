@@ -125,13 +125,14 @@ The bundled Substance Painter preset produces compatible names automatically.
   profiles. Native Arnold and MoonRay do not expose an equivalent portable hex
   lookup here, so the tool rejects that combination with a clear message.
 - **Triplanar Projection** projects textures in object space without requiring
-  usable mesh UVs.
+  usable mesh UVs. It uses the standard MtlX Triplanar Projection node in the
+  generic USD MaterialX builder.
 - **Triplanar with Pattern Breakup** adds randomized neighboring cells to hide
   obvious repetition. Karma uses its dedicated hex-triplanar color and normal
   lookups; Arnold uses its native triplanar shader and cell breakup. Both modes
   are supported by Karma, Arnold USD MaterialX, and native Arnold. Generic USD
-  MaterialX and MoonRay are rejected because Houdini 22 does not provide a
-  renderer-correct triplanar normal-map path for those profiles.
+  MaterialX supports plain triplanar, but not randomized-cell breakup. MoonRay
+  is rejected because its Houdini integration has no compatible triplanar node.
 
 UV-based MaterialX images receive an explicit UV connection. Triplanar modes
 use object-space position and normals instead, so they do not depend on `st`.

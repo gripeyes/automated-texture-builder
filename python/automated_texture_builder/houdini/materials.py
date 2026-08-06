@@ -153,6 +153,38 @@ def _image(
 ) -> hou.Node:
     if texture_mode in {"triplanar", "triplanar_breakup"}:
         breakup = texture_mode == "triplanar_breakup"
+        if profile == "generic":
+            if breakup:
+                raise RuntimeError(
+                    "Generic MaterialX supports standard Triplanar Projection, "
+                    "but its standard node has no randomized-cell breakup. "
+                    "Choose Triplanar Projection, Karma, or an Arnold builder."
+                )
+            projection = parent.createNode("mtlxtriplanarprojection", name + "_projection")
+            projection.parm("signature").set(
+                "float" if signature == "float" else "color3"
+            )
+            for axis in "xyz":
+                projection.parm("file" + axis).set(path)
+                colorspace = projection.parm("file" + axis + "colorspace")
+                if colorspace is not None:
+                    colorspace.set(lookup_space)
+            position = parent.node("triplanar_position")
+            if position is None:
+                position = parent.createNode("mtlxposition", "triplanar_position")
+                position.parm("space").set("object")
+            shading_normal = parent.node("triplanar_shading_normal")
+            if shading_normal is None:
+                shading_normal = parent.createNode("mtlxnormal", "triplanar_shading_normal")
+                shading_normal.parm("space").set("object")
+            _connect(projection, "position", position)
+            _connect(projection, "normal", shading_normal)
+            if signature == "vector3":
+                converted = parent.createNode("mtlxconvert", name)
+                converted.parm("signature").set("color3vector3")
+                _connect(converted, "in", projection)
+                return converted
+            return projection
         if profile == "karma":
             source_name = name + "_triplanar_source"
             source = parent.createNode("kma_hextiled_triplanar", source_name)
@@ -670,11 +702,11 @@ def build_materials(
             "Choose a USD MaterialX, Karma, or Arnold USD MaterialX builder, "
             "or use Repeating Texture for native Arnold and MoonRay."
         )
-    if texture_mode in {"triplanar", "triplanar_breakup"} and profile in {"generic", "moonray"}:
+    if texture_mode in {"triplanar", "triplanar_breakup"} and profile == "moonray":
         raise RuntimeError(
             "Triplanar modes are available for Karma, Arnold USD MaterialX, "
-            "and native Arnold. Generic MaterialX and MoonRay do not provide "
-            "a renderer-correct triplanar normal-map projection in this Houdini build."
+            "native Arnold, and generic MaterialX (plain triplanar only). "
+            "MoonRay does not provide a compatible triplanar projection node."
         )
     if profile == "arnold_native":
         return _build_arnold_native(
