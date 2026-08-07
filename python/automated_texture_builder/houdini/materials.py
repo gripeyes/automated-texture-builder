@@ -146,6 +146,119 @@ def _uv_node(builder: hou.Node, uv_primvar: str) -> hou.Node:
     return uv
 
 
+def _append_float_control(
+    templates: list[hou.ParmTemplate], name: str, label: str, default: float,
+    minimum: float, maximum: float,
+) -> None:
+    templates.append(hou.FloatParmTemplate(
+        name, label, 1, default_value=(default,), min=minimum, max=maximum,
+    ))
+
+
+def _add_texture_controls(
+    builder: hou.Node, texture_mode: str, native_arnold: bool = False,
+) -> None:
+    """Create one visible control node that drives every generated texture lookup."""
+    controls: list[hou.ParmTemplate] = []
+    if texture_mode in {"triplanar", "triplanar_breakup"}:
+        _append_float_control(controls, "atb_projection_scale", "Projection Scale", 1.0, 0.001, 100.0)
+        _append_float_control(controls, "atb_projection_blend", "Projection Blend", 1.0, 0.0, 1.0)
+        if texture_mode == "triplanar_breakup":
+            if native_arnold:
+                _append_float_control(controls, "atb_cell_rotation", "Cell Rotation", 1.0, 0.0, 1.0)
+                _append_float_control(controls, "atb_cell_blend", "Cell Blend", 0.1, 0.0, 1.0)
+            else:
+                _append_float_control(controls, "atb_breakup_frequency", "Breakup Frequency", 1.0, 0.001, 100.0)
+                _append_float_control(controls, "atb_breakup_amount", "Breakup Amount", 0.15, 0.0, 10.0)
+    elif texture_mode == "hex":
+        _append_float_control(controls, "atb_pattern_tiling", "Pattern Tiling", 1.0, 0.001, 100.0)
+        _append_float_control(controls, "atb_random_rotation", "Random Rotation", 1.0, 0.0, 1.0)
+        _append_float_control(controls, "atb_rotation_min", "Rotation Minimum", 0.0, -360.0, 360.0)
+        _append_float_control(controls, "atb_rotation_max", "Rotation Maximum", 360.0, -360.0, 360.0)
+        _append_float_control(controls, "atb_random_scale", "Random Scale", 1.0, 0.0, 1.0)
+        _append_float_control(controls, "atb_scale_min", "Scale Minimum", 0.5, 0.001, 10.0)
+        _append_float_control(controls, "atb_scale_max", "Scale Maximum", 2.0, 0.001, 10.0)
+        _append_float_control(controls, "atb_random_offset", "Random Offset", 1.0, 0.0, 1.0)
+        _append_float_control(controls, "atb_offset_min", "Offset Minimum", 0.0, -10.0, 10.0)
+        _append_float_control(controls, "atb_offset_max", "Offset Maximum", 1.0, -10.0, 10.0)
+        _append_float_control(controls, "atb_pattern_falloff", "Pattern Falloff", 0.5, 0.0, 1.0)
+        _append_float_control(controls, "atb_pattern_contrast", "Pattern Contrast", 0.5, 0.0, 1.0)
+    if not controls:
+        return
+    control = builder.createNode("null", "texture_controls")
+    control.setComment(
+        "UNIVERSAL TEXTURE CONTROLS\n"
+        "Shared artist controls. Every compatible texture lookup in this material "
+        "references these values. This UI-only node is not part of the MaterialX graph."
+    )
+    control.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    control.setColor(hou.Color((0.25, 0.55, 0.75)))
+    control.setPosition(hou.Vector2(-7.0, 4.0))
+    group = control.parmTemplateGroup()
+    group.append(hou.FolderParmTemplate(
+        "atb_texture_controls", "Texture Controls", tuple(controls),
+    ))
+    control.setParmTemplateGroup(group)
+
+
+def _reference(parm: hou.Parm | None, parent_parm: str) -> None:
+    if parm is not None:
+        parm.setExpression(f'ch("../texture_controls/{parent_parm}")')
+
+
+def _apply_hex_controls(node: hou.Node) -> None:
+    """Drive every standard MaterialX hex lookup from the material controls."""
+    for parm_name, control_name in (
+        ("tilingx", "atb_pattern_tiling"),
+        ("tilingy", "atb_pattern_tiling"),
+        ("rotation", "atb_random_rotation"),
+        ("rotationrangex", "atb_rotation_min"),
+        ("rotationrangey", "atb_rotation_max"),
+        ("scale", "atb_random_scale"),
+        ("scalerangex", "atb_scale_min"),
+        ("scalerangey", "atb_scale_max"),
+        ("offset", "atb_random_offset"),
+        ("offsetrangex", "atb_offset_min"),
+        ("offsetrangey", "atb_offset_max"),
+        ("falloff", "atb_pattern_falloff"),
+        ("falloffcontrast", "atb_pattern_contrast"),
+    ):
+        _reference(node.parm(parm_name), control_name)
+
+
+def _triplanar_position(parent: hou.Node, breakup: bool) -> hou.Node:
+    """Build one renderer-neutral MaterialX position graph shared by all maps."""
+    result = parent.node("triplanar_position_output")
+    if result is not None:
+        return result
+    position = parent.createNode("mtlxposition", "triplanar_position")
+    position.parm("space").set("object")
+    scaled = parent.createNode("mtlxmultiply", "triplanar_position_scaled")
+    scaled.parm("signature").set("vector3FA")
+    _connect(scaled, "in1", position)
+    _reference(scaled.parm("in2"), "atb_projection_scale")
+    result = scaled
+    if breakup:
+        frequency = parent.createNode("mtlxmultiply", "breakup_frequency")
+        frequency.parm("signature").set("vector3FA")
+        _connect(frequency, "in1", scaled)
+        _reference(frequency.parm("in2"), "atb_breakup_frequency")
+        noise = parent.createNode("mtlxnoise3d", "breakup_noise")
+        noise.parm("signature").set("vector3")
+        _connect(noise, "position", frequency)
+        amount = parent.createNode("mtlxmultiply", "breakup_amount")
+        amount.parm("signature").set("vector3FA")
+        _connect(amount, "in1", noise)
+        _reference(amount.parm("in2"), "atb_breakup_amount")
+        result = parent.createNode("mtlxadd", "triplanar_position_output")
+        result.parm("signature").set("vector3")
+        _connect(result, "in1", scaled)
+        _connect(result, "in2", amount)
+    else:
+        result.setName("triplanar_position_output", unique_name=False)
+    return result
+
+
 def _image(
     parent: hou.Node, name: str, path: str, signature: str,
     uv: hou.Node, texture_mode: str, lookup_space: str = "Raw",
@@ -153,81 +266,21 @@ def _image(
 ) -> hou.Node:
     if texture_mode in {"triplanar", "triplanar_breakup"}:
         breakup = texture_mode == "triplanar_breakup"
-        if profile == "generic" and not breakup:
+        if profile in {"generic", "karma", "arnold"}:
             projection = parent.createNode("mtlxtriplanarprojection", name + "_projection")
-            projection.parm("signature").set(
-                "float" if signature == "float" else "color3"
-            )
+            projection.parm("signature").set(signature)
             for axis in "xyz":
                 projection.parm("file" + axis).set(path)
                 colorspace = projection.parm("file" + axis + "colorspace")
                 if colorspace is not None:
                     colorspace.set(lookup_space)
-            position = parent.node("triplanar_position")
-            if position is None:
-                position = parent.createNode("mtlxposition", "triplanar_position")
-                position.parm("space").set("object")
-            shading_normal = parent.node("triplanar_shading_normal")
-            if shading_normal is None:
-                shading_normal = parent.createNode("mtlxnormal", "triplanar_shading_normal")
-                shading_normal.parm("space").set("object")
-            _connect(projection, "position", position)
-            _connect(projection, "normal", shading_normal)
-            if signature == "vector3":
-                converted = parent.createNode("mtlxconvert", name)
-                converted.parm("signature").set("color3vector3")
-                _connect(converted, "in", projection)
-                return converted
-            return projection
-        if profile in {"generic", "karma"}:
-            source_name = name + "_triplanar_source"
-            source = parent.createNode("kma_hextiled_triplanar", source_name)
-            source.parm("file").set(path)
-            source.parm("sourceColorSpace").set(
-                "raw" if lookup_space.lower() == "raw" else "auto"
-            )
-            # Zero randomization makes this the predictable/plain projection;
-            # the breakup mode deliberately varies neighboring hex cells.
-            source.parm("rand_scale").set(0.12 if breakup else 0.0)
-            source.parm("rand_rot").set(0.5 if breakup else 0.0)
-            if signature == "float":
-                channel = parent.createNode("mtlxseparate4v", name)
-                _connect(channel, "in", source)
-                return channel
-            if signature in {"color3", "vector3"}:
-                converted = parent.createNode("mtlxconvert", name)
-                converted.parm("signature").set(
-                    "vector4color3" if signature == "color3" else "vector4vector3"
-                )
-                _connect(converted, "in", source)
-                return converted
-            return source
-        if profile == "arnold":
-            source = parent.createNode("mtlximage", name + "_triplanar_source")
-            source.parm("signature").set("color3")
-            source.parm("file").set(path)
-            if source.parm("filecolorspace"):
-                source.parm("filecolorspace").set(lookup_space)
-            projection = parent.createNode("arnold::mtlxtriplanar", name + "_projection")
-            _connect(projection, "input", source)
-            projection.parm("coord_space").set(1)  # object space
-            projection.parm("cell").set(1 if breakup else 0)
-            if breakup:
-                projection.parm("cell_rotate").set(1.0)
-                projection.parm("cell_blend").set(0.1)
-            if signature == "float":
-                channel = parent.createNode("mtlxseparate3c", name)
-                _connect(channel, "in", projection)
-                return channel
-            if signature == "vector3":
-                converted = parent.createNode("mtlxconvert", name)
-                converted.parm("signature").set("color3vector3")
-                _connect(converted, "in", projection)
-                return converted
+            _connect(projection, "position", _triplanar_position(parent, breakup))
+            _reference(projection.parm("blend"), "atb_projection_blend")
+            # Do not connect the normal input. Its standard Nobject default is
+            # portable; an explicit MtlX Normal breaks Arnold's translation.
             return projection
         raise RuntimeError(
-            "Triplanar projection with correct tangent-space normals requires "
-            "a Karma or Arnold material builder in Houdini 22."
+            "This material profile has no compatible triplanar implementation."
         )
     if texture_mode == "hex":
         source_name = name if signature == "color3" else name + "_hex_source"
@@ -236,6 +289,7 @@ def _image(
         if source.parm("filecolorspace"):
             source.parm("filecolorspace").set(lookup_space)
         _connect(source, "texcoord", uv_transform or uv)
+        _apply_hex_controls(source)
         if signature == "float":
             channel = parent.createNode("mtlxseparate3c", name)
             _connect(channel, "in", source)
@@ -269,22 +323,15 @@ def _normal_texture(
         if normal.parm("filecolorspace"):
             normal.parm("filecolorspace").set("Raw")
         _connect(normal, "texcoord", uv_transform or uv)
+        _apply_hex_controls(normal)
         return normal
-    if (
-        texture_mode in {"triplanar", "triplanar_breakup"}
-        and profile in {"generic", "karma"}
-        and (profile == "karma" or texture_mode == "triplanar_breakup")
-    ):
-        normal = parent.createNode("kma_hextiled_triplanar", name)
-        normal.parm("signature").set("normals")
-        normal.parm("file").set(path)
-        normal.parm("sourceColorSpace").set("raw")
-        normal.parm("rand_scale").set(
-            0.12 if texture_mode == "triplanar_breakup" else 0.0
+    if texture_mode in {"triplanar", "triplanar_breakup"}:
+        image = _image(
+            parent, name, path, "vector3", uv, texture_mode,
+            "Raw", uv_transform, profile,
         )
-        normal.parm("rand_rot").set(
-            0.5 if texture_mode == "triplanar_breakup" else 0.0
-        )
+        normal = parent.createNode("mtlxnormalmap", name + "_normalmap")
+        _connect(normal, "in", image)
         return normal
     image = _image(
         parent, name + "_image", path, "vector3", uv,
@@ -377,11 +424,14 @@ def _arnold_image(builder: hou.Node, name: str, item: dict, texture_mode: str) -
     projection = builder.createNode("arnold::triplanar", name + "_triplanar")
     _connect_output(projection, "input", image, "rgba")
     projection.parm("coord_space").set("object")
+    for axis in "xyz":
+        _reference(projection.parm("scale" + axis), "atb_projection_scale")
+    _reference(projection.parm("blend"), "atb_projection_blend")
     breakup = texture_mode == "triplanar_breakup"
     projection.parm("cell").set(1 if breakup else 0)
     if breakup:
-        projection.parm("cell_rotate").set(1.0)
-        projection.parm("cell_blend").set(0.1)
+        _reference(projection.parm("cell_rotate"), "atb_cell_rotation")
+        _reference(projection.parm("cell_blend"), "atb_cell_blend")
     return projection
 
 
@@ -441,6 +491,7 @@ def _build_arnold_native(
         set_name = texture_set["name"]
         builder = library.createNode("arnold_materialbuilder", safe_name(set_name))
         builder.setUserData("automated_texture_builder", "1")
+        _add_texture_controls(builder, texture_mode, native_arnold=True)
         surface = builder.createNode("arnold::standard_surface", "standard_surface")
         output = builder.node("OUT_material")
         _connect(output, "surface", surface)
@@ -703,7 +754,7 @@ def build_materials(
     if texture_mode in {"triplanar", "triplanar_breakup"} and profile == "moonray":
         raise RuntimeError(
             "Triplanar modes are available for Karma, Arnold USD MaterialX, "
-            "native Arnold, and generic MaterialX (plain triplanar only). "
+            "native Arnold, and generic MaterialX. "
             "MoonRay does not provide a compatible triplanar projection node."
         )
     if profile == "arnold_native":
@@ -722,6 +773,7 @@ def build_materials(
         set_name = texture_set["name"]
         node_name = safe_name(set_name)
         builder = _make_builder(library, node_name, profile)
+        _add_texture_controls(builder, texture_mode)
         surface = _replace_surface(builder, surface_model)
         surface.setPosition(hou.Vector2(1.0, 1.0))
         displacement = builder.node("mtlxdisplacement")

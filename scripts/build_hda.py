@@ -166,7 +166,7 @@ def build() -> Path:
             "Triplanar with Pattern Breakup",
         ),
         default_value=0,
-    ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D. Hex Pattern Breakup reduces repetition in UV-mapped materials. Triplanar projects in object space without requiring UVs. Generic MaterialX uses the standard triplanar node for plain projection and Houdini's MaterialX-based hex-triplanar compound for pattern breakup."))
+    ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D. Hex Pattern Breakup reduces repetition in UV-mapped materials. Triplanar projects in object space without requiring UVs. Breakup modes create one visible texture_controls node that drives all compatible lookups. USD MaterialX profiles use only standard MaterialX nodes; no Karma shader compound is inserted."))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "geometry_detail_mode", "Height / Displacement Mode",
         ("auto", "bump", "displacement", "off"),
@@ -324,7 +324,8 @@ Choose OpenPBR Surface or MaterialX Standard Surface, and choose a generic,
 Karma, Arnold, native Arnold, or MoonRay material builder. UV-based textures
 get an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles;
 Repeating mode adds a shared MtlX USD Transform 2D. Triplanar modes project
-textures in object space without UVs; the breakup variant reduces repetition.
+textures in object space without UVs; the breakup variant uses one shared,
+renderer-neutral MaterialX position graph and a visible texture-controls node.
 Hex Pattern Breakup adds MaterialX 1.39 hex image and normal-map lookups to
 reduce obvious UV repetition.
 

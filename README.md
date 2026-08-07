@@ -124,22 +124,28 @@ The bundled Substance Painter preset produces compatible names automatically.
 - **Tiled Texture with Hex Pattern Breakup** uses the shared USD Transform 2D
   plus MaterialX 1.39 Hex Tiled Image nodes. Normal textures use the dedicated
   Hex Tiled Normal Map node, while scalar maps take the red channel from the
-  same randomized lookup. This mode is available for the MaterialX builder
+  same randomized lookup. A single visible `texture_controls` node drives the
+  tiling, rotation, scale, offset, falloff and contrast of every lookup in the
+  material. This mode is available for the MaterialX builder
   profiles. Native Arnold and MoonRay do not expose an equivalent portable hex
   lookup here, so the tool rejects that combination with a clear message.
 - **Triplanar Projection** projects textures in object space without requiring
-  usable mesh UVs. It uses the standard MtlX Triplanar Projection node in the
-  generic USD MaterialX builder.
-- **Triplanar with Pattern Breakup** adds randomized neighboring cells to hide
-  obvious repetition. Karma uses its dedicated hex-triplanar color and normal
-  lookups; generic MaterialX uses the same MaterialX-based Houdini compound;
-  Arnold uses its native triplanar shader and cell breakup. Both modes are
-  supported by generic MaterialX, Karma, Arnold USD MaterialX, and native
-  Arnold. MoonRay is rejected because its Houdini integration has no compatible
-  triplanar node.
+  usable mesh UVs. Generic, Karma and Arnold USD profiles all use the same
+  standard MtlX Triplanar Projection graph.
+- **Triplanar with Pattern Breakup** adds a shared standard-MaterialX position
+  variation before those projections to hide obvious repetition. The visible
+  `texture_controls` node drives projection scale, blend, breakup frequency and
+  breakup amount for every map together. The graph contains no Karma-specific
+  shader nodes. Normal textures request the triplanar node's `vector3` signature
+  directly, with no MtlX Convert, before the standard MtlX Normal Map decoding;
+  the projection's normal input remains at its portable `Nobject` default.
+  Generic MaterialX, Karma, Arnold USD MaterialX and native Arnold are
+  supported. MoonRay is rejected because its Houdini integration has no
+  compatible triplanar node.
 
 UV-based MaterialX images receive an explicit UV connection. Triplanar modes
-use object-space position and normals instead, so they do not depend on `st`.
+use object-space position and the projection node's standard `Nobject` default,
+so they do not depend on `st`.
 
 ## Color management
 
