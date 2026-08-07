@@ -13,13 +13,9 @@ def normalize(value: str) -> str:
 
 
 def normalize_usd_root(value: str) -> str:
-    """Return a canonical absolute USD root path for assignment searches."""
-    path = value.strip()
-    if not path or path == "/":
-        return "/"
-    path = "/" + path.lstrip("/")
-    path = re.sub(r"/{2,}", "/", path)
-    return path.rstrip("/") or "/"
+    """Canonicalize any-depth USD hierarchy root for assignment searches."""
+    segments = [segment for segment in value.strip().split("/") if segment]
+    return "/" + "/".join(segments) if segments else "/"
 
 
 def meaningful_name_tokens(value: str) -> list[str]:

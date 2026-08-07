@@ -4,13 +4,23 @@ from automated_texture_builder.matching import match_materials_to_paths, normali
 
 
 class MatchingTests(unittest.TestCase):
-    def test_usd_assignment_root_normalizes_trailing_and_duplicate_slashes(self):
-        self.assertEqual(normalize_usd_root("/sopcreate1/"), "/sopcreate1")
-        self.assertEqual(
-            normalize_usd_root("//sopcreate1//unwrapped///"),
-            "/sopcreate1/unwrapped",
-        )
+    def test_usd_assignment_root_normalization_is_depth_agnostic(self):
+        segments = ("asset_01", "geometry", "render", "parts", "mesh_42")
+        for depth in range(1, len(segments) + 1):
+            current = segments[:depth]
+            canonical = "/" + "/".join(current)
+            variants = (
+                canonical,
+                canonical + "/",
+                canonical + "///",
+                "//" + "//".join(current) + "//",
+                canonical.lstrip("/"),
+            )
+            for variant in variants:
+                with self.subTest(depth=depth, variant=variant):
+                    self.assertEqual(normalize_usd_root(variant), canonical)
         self.assertEqual(normalize_usd_root("/"), "/")
+        self.assertEqual(normalize_usd_root(""), "/")
 
     def test_tallsculpt_names_all_match_unique_meshes(self):
         names = (
