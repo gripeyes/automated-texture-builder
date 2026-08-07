@@ -285,7 +285,10 @@ def _message(text: str, error: bool = False) -> None:
 def _solaris_nodes(controller: hou.Node):
     parent = controller.parent()
     displayed_before = next(
-        (child for child in parent.children() if child.isDisplayFlagSet()),
+        (
+            child for child in parent.children()
+            if child.isGenericFlagSet(hou.nodeFlag.Display)
+        ),
         None,
     )
     requested = controller.evalParm("library_name").strip() or controller.name()
@@ -348,9 +351,9 @@ def _solaris_nodes(controller: hou.Node):
     # currently displayed node instead. If the library was already displayed
     # before this rebuild, leave that deliberate/current state unchanged.
     if displayed_before is not None and displayed_before != library:
-        displayed_before.setDisplayFlag(True)
+        displayed_before.setGenericFlag(hou.nodeFlag.Display, True)
     elif displayed_before is None:
-        library.setDisplayFlag(False)
+        library.setGenericFlag(hou.nodeFlag.Display, False)
     return library
 
 
