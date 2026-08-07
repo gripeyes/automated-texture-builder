@@ -44,7 +44,10 @@ The OpenPBR workflow recognizes the practical OpenPBR 1.1 texture set. It also
 understands common aliases such as `Albedo`, `Metallic`, `Metalness`,
 `Roughness`, `Sheen`, `Translucency`, and Painter's longer OpenPBR names.
 Downloaded texture libraries that use a plain `_Color` suffix are treated as
-Base Color as well.
+Base Color as well. Common abbreviated library conventions are recognized at
+token boundaries, including `Diff`/`Diffuse`, `Rough`/`Rgh`, `Metal`/`Met`,
+`Nor_GL`/`Nrm_OpenGL`, `Disp`/`Displ`, and `Hgt`. Resolution suffixes such as
+`1K`, `4K`, `8K`, and `16K` do not become part of the material name.
 
 ## Texture workflows
 

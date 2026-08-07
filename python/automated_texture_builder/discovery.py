@@ -10,13 +10,14 @@ SUPPORTED = {".bmp", ".exr", ".hdr", ".jpeg", ".jpg", ".png", ".tga", ".tif", ".
 UDIM_RE = re.compile(r"(?<!\d)(1\d{3})(?!\d)")
 CHANNEL_RE = re.compile(
     r"(?:^|[_\-.])(?P<channel>"
-    r"base[_ ]?color|albedo|color|base[_ ]?metalness|metallic|metalness|"
+    r"base[_ ]?color|albedo|diffuse|diff|color|"
+    r"base[_ ]?metalness|metallic|metalness|metal|met|"
     r"base[_ ]?weight|base[_ ]?diffuse[_ ]?roughness|diffuse[_ ]?roughness|"
     r"specular[_ ]?weight|specular[_ ]?level|specularlevel|"
     r"specular[_ ]?roughness[_ ]?anisotropy|specular[_ ]?anisotropy[_ ]?angle|"
     r"specular[_ ]?anisotropy|"
     r"anisotropy[_ ]?angle|anisotropy|anisotropy[_ ]?level|"
-    r"specular[_ ]?roughness|roughness|specular[_ ]?color|specular[_ ]?ior|"
+    r"specular[_ ]?roughness|roughness|rough|rgh|specular[_ ]?color|specular[_ ]?ior|"
     r"transmission[_ ]?dispersion[_ ]?abbe[_ ]?number|transmission[_ ]?dispersion[_ ]?scale|"
     r"transmission[_ ]?scatter[_ ]?anisotropy|transmission[_ ]?scatter|"
     r"transmission[_ ]?color|transmission[_ ]?depth|transmission[_ ]?weight|"
@@ -33,7 +34,9 @@ CHANNEL_RE = re.compile(
     r"emission[_ ]?luminance|emission[_ ]?weight|emission[_ ]?color|emissive|emission|"
     r"geometry[_ ]?opacity|geometry[_ ]?thin[_ ]?walled|thin[_ ]?walled|opacity|"
     r"vector[_ ]?displacement|vdisp|"
-    r"normal(?:[_ ]?(?:opengl|gl))?|geometry[_ ]?tangent|tangent|height|displacement"
+    r"normal(?:[_ ]?(?:opengl|gl))?|nor(?:[_ ]?(?:opengl|gl))?|"
+    r"nrm(?:[_ ]?(?:opengl|gl))?|geometry[_ ]?tangent|tangent|"
+    r"height|hgt|displacement|disp|displ"
     r")(?=$|[_\-.])",
     re.IGNORECASE,
 )
@@ -42,6 +45,8 @@ ALIASES = {
     "basecolor": "base_color",
     "base_color": "base_color",
     "albedo": "base_color",
+    "diffuse": "base_color",
+    "diff": "base_color",
     "color": "base_color",
     "baseweight": "base_weight",
     "base_weight": "base_weight",
@@ -53,6 +58,8 @@ ALIASES = {
     "base_metalness": "base_metalness",
     "metallic": "base_metalness",
     "metalness": "base_metalness",
+    "metal": "base_metalness",
+    "met": "base_metalness",
     "specularweight": "specular_weight",
     "specular_weight": "specular_weight",
     "specularlevel": "legacy_specular_level",
@@ -60,6 +67,8 @@ ALIASES = {
     "specularroughness": "specular_roughness",
     "specular_roughness": "specular_roughness",
     "roughness": "specular_roughness",
+    "rough": "specular_roughness",
+    "rgh": "specular_roughness",
     "specularcolor": "specular_color",
     "specular_color": "specular_color",
     "specularior": "specular_ior",
@@ -143,9 +152,22 @@ ALIASES = {
     "normal_opengl": "normal",
     "normalgl": "normal",
     "normal_gl": "normal",
+    "nor": "normal",
+    "noropengl": "normal",
+    "nor_opengl": "normal",
+    "norgl": "normal",
+    "nor_gl": "normal",
+    "nrm": "normal",
+    "nrmopengl": "normal",
+    "nrm_opengl": "normal",
+    "nrmgl": "normal",
+    "nrm_gl": "normal",
     "tangent": "tangent", "geometrytangent": "tangent", "geometry_tangent": "tangent",
     "height": "height",
+    "hgt": "height",
     "displacement": "displacement",
+    "disp": "displacement",
+    "displ": "displacement",
     "vectordisplacement": "vector_displacement",
     "vector_displacement": "vector_displacement",
     "vdisp": "vector_displacement",

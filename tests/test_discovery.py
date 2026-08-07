@@ -32,6 +32,24 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertEqual(texture.channel, expected)
                 self.assertEqual(texture.udim, 1001)
 
+    def test_common_downloaded_library_abbreviations_are_resolution_independent(self):
+        conventions = {
+            "stone_courtyard_diff_2k.jpg": ("stone_courtyard", "base_color"),
+            "stone_courtyard_rough_4k.exr": ("stone_courtyard", "specular_roughness"),
+            "stone_courtyard_rgh_8k.tif": ("stone_courtyard", "specular_roughness"),
+            "stone_courtyard_nor_gl_4k.exr": ("stone_courtyard", "normal"),
+            "stone_courtyard_nrm_opengl_8k.tif": ("stone_courtyard", "normal"),
+            "stone_courtyard_disp_4k.png": ("stone_courtyard", "displacement"),
+            "stone_courtyard_displ_8k.exr": ("stone_courtyard", "displacement"),
+            "stone_courtyard_met_1k.png": ("stone_courtyard", "base_metalness"),
+            "stone_courtyard_hgt_16k.exr": ("stone_courtyard", "height"),
+        }
+        for filename, expected in conventions.items():
+            with self.subTest(filename=filename):
+                texture = parse_texture(Path("/arbitrary/library") / filename)
+                self.assertIsNotNone(texture)
+                self.assertEqual((texture.texture_set, texture.channel), expected)
+
     def test_scan_excludes_tx_folder(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
