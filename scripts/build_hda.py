@@ -175,10 +175,10 @@ def build() -> Path:
             "True Displacement", "Ignore Height / Displacement",
         ),
         default_value=0,
-    ), "Automatic treats Height as bump detail and explicitly named Displacement or VectorDisplacement maps as true geometry displacement. Bump Only never changes the silhouette. True Displacement uses the best available vector, displacement, then height map. Ignore leaves geometry detail disconnected. MoonRay has no scalar bump-map node, so a Height-only map requires explicit True Displacement there."))
+    ), "Automatic uses the best available true-displacement signal in this order: Vector Displacement, Displacement, then Height. This matches Substance Painter, whose displacement source defaults to Height. Bump Only never changes the silhouette. Ignore leaves geometry detail disconnected."))
     textures.addParmTemplate(explained(hou.FloatParmTemplate(
         "bump_scale", "Bump Scale", 1, (1.0,),
-    ), "Dimensionless strength for Height maps evaluated as bump. This changes shading normals without moving the mesh silhouette."))
+    ), "Dimensionless strength used only in Bump Only mode. This changes shading normals without moving the mesh silhouette."))
     textures.addParmTemplate(explained(hou.FloatParmTemplate(
         "height_scale", "Displacement Scale (Scene Units)", 1, (0.01,),
     ), "Physical strength for scalar or vector true displacement. Painter texture pixels do not contain a reliable real-world distance, so adjust this for the asset's scene scale."))
@@ -187,7 +187,7 @@ def build() -> Path:
     ), "Texture value that leaves the surface unchanged. The included floating-point Substance Painter preset preserves signed height around 0. Use 0.5 for a conventional normalized black-to-white height map whose neutral value is middle gray."))
     textures.addParmTemplate(explained(compact_info(
         "height_note", "Height Handling",
-        "Auto: Height → bump; Displacement / VectorDisplacement → true displacement.",
+        "Auto: Vector Displacement → Displacement → Height; one true-displacement input.",
     ), "Scalar true displacement is centered around the zero level and multiplied by the explicit scale. True displacement also requires suitable tessellation and displacement bounds on the rendered geometry."))
     textures.addParmTemplate(explained(hou.StringParmTemplate(
         "library_name", "Material Library Name", 1, ("$OS",)

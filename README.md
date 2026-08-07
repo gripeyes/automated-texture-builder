@@ -147,23 +147,25 @@ Data maps such as roughness, metalness, normal and displacement remain Raw.
 
 ### Height and displacement
 
-Painter height pixels do not carry a dependable real-world displacement
-distance. Connecting them to a displacement node at its default scale of 1 can
-move points by one full scene unit and severely enlarge or break an asset.
+Substance Painter uses Height as its default displacement source. The tool
+therefore connects Height to true displacement automatically. Painter's texture
+export does not, however, embed a dependable scene-unit distance in the pixels;
+connecting it at a renderer default scale of 1 can move points by one full scene
+unit and severely enlarge or break an asset.
 
-The tool keeps these filename semantics distinct instead of routing every map
-through true displacement:
+The tool uses map naming to choose the most specific available displacement
+signal:
 
 | Detected map | Automatic behavior |
 | --- | --- |
-| `Height` | Bump detail; does not change the silhouette |
+| `Height` | Scalar true displacement along the normal |
 | `Displacement` | Scalar true displacement along the normal |
 | `VectorDisplacement` or `VDisp` | Three-channel true displacement |
 
-**Height / Displacement Mode** can override Automatic with Bump Only, True
-Displacement, or Ignore. True Displacement prefers vector displacement, then
-scalar displacement, then height. This makes a Height-only Painter export safe
-by default while still allowing an artist to request silhouette displacement.
+Automatic selects exactly one signal in this order: vector displacement,
+explicit scalar displacement, then height. It does not also apply the same
+Height map as bump, avoiding duplicated detail. **Height / Displacement Mode**
+can override this with Bump Only or Ignore.
 
 The tool also authors separate bump and displacement controls because they use
 different units:
@@ -176,13 +178,10 @@ different units:
   height values preserved by the included Painter preset. Set it to `0.5` for
   a normalized height texture where middle gray is flat.
 
-For bump, MaterialX chains MtlX Bump after the tangent normal map. For true
+For Bump Only, MaterialX chains MtlX Bump after the tangent normal map. For true
 displacement, it subtracts the zero level before MtlX Displacement applies the
-scale. Native Arnold creates the corresponding bump or scaled displacement
-network. MoonRay supports scalar and vector displacement; because its shipped
-nodes do not include a scalar height-to-bump converter, Automatic leaves a
-Height-only map as a documented, unconnected bump request. Choose True
-Displacement explicitly to use that map with MoonRay.
+scale. Native Arnold and MoonRay create their corresponding safely scaled
+scalar or vector displacement networks.
 
 These values remain artist controls because texture pixels alone cannot
 determine the intended physical displacement. True displacement also requires

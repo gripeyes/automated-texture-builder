@@ -17,10 +17,7 @@ def geometry_detail_plan(maps: dict, mode: str) -> tuple[str | None, str | None]
         return scalar, None
     if mode == "displacement":
         return None, preferred_displacement
-    # Automatic keeps authored Height as shading detail, while an explicitly
-    # named displacement map is allowed to modify geometry.
-    bump = "height" if "height" in maps else None
-    displacement = "vector_displacement" if "vector_displacement" in maps else (
-        "displacement" if "displacement" in maps else None
-    )
-    return bump, displacement
+    # Painter's displacement source defaults to Height. Automatic therefore
+    # selects one best true-displacement signal and avoids simultaneously
+    # applying Height as bump, which would duplicate the same authored detail.
+    return None, preferred_displacement

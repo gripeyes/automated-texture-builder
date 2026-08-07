@@ -4,13 +4,13 @@ from automated_texture_builder.geometry_detail import geometry_detail_plan
 
 
 class GeometryDetailTests(unittest.TestCase):
-    def test_auto_keeps_height_as_bump(self):
-        self.assertEqual(geometry_detail_plan({"height": {}}, "auto"), ("height", None))
+    def test_auto_connects_height_as_true_displacement(self):
+        self.assertEqual(geometry_detail_plan({"height": {}}, "auto"), (None, "height"))
 
     def test_auto_distinguishes_height_and_displacement(self):
         self.assertEqual(
             geometry_detail_plan({"height": {}, "displacement": {}}, "auto"),
-            ("height", "displacement"),
+            (None, "displacement"),
         )
 
     def test_auto_prefers_vector_displacement(self):
@@ -18,8 +18,13 @@ class GeometryDetailTests(unittest.TestCase):
             geometry_detail_plan(
                 {"height": {}, "displacement": {}, "vector_displacement": {}}, "auto",
             ),
-            ("height", "vector_displacement"),
+            (None, "vector_displacement"),
         )
+
+    def test_auto_does_not_duplicate_height_as_bump_and_displacement(self):
+        bump, displacement = geometry_detail_plan({"height": {}}, "auto")
+        self.assertIsNone(bump)
+        self.assertEqual(displacement, "height")
 
     def test_true_displacement_uses_height_as_last_fallback(self):
         self.assertEqual(
