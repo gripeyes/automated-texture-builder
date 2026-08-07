@@ -153,13 +153,7 @@ def _image(
 ) -> hou.Node:
     if texture_mode in {"triplanar", "triplanar_breakup"}:
         breakup = texture_mode == "triplanar_breakup"
-        if profile == "generic":
-            if breakup:
-                raise RuntimeError(
-                    "Generic MaterialX supports standard Triplanar Projection, "
-                    "but its standard node has no randomized-cell breakup. "
-                    "Choose Triplanar Projection, Karma, or an Arnold builder."
-                )
+        if profile == "generic" and not breakup:
             projection = parent.createNode("mtlxtriplanarprojection", name + "_projection")
             projection.parm("signature").set(
                 "float" if signature == "float" else "color3"
@@ -185,7 +179,7 @@ def _image(
                 _connect(converted, "in", projection)
                 return converted
             return projection
-        if profile == "karma":
+        if profile in {"generic", "karma"}:
             source_name = name + "_triplanar_source"
             source = parent.createNode("kma_hextiled_triplanar", source_name)
             source.parm("file").set(path)
@@ -276,7 +270,11 @@ def _normal_texture(
             normal.parm("filecolorspace").set("Raw")
         _connect(normal, "texcoord", uv_transform or uv)
         return normal
-    if texture_mode in {"triplanar", "triplanar_breakup"} and profile == "karma":
+    if (
+        texture_mode in {"triplanar", "triplanar_breakup"}
+        and profile in {"generic", "karma"}
+        and (profile == "karma" or texture_mode == "triplanar_breakup")
+    ):
         normal = parent.createNode("kma_hextiled_triplanar", name)
         normal.parm("signature").set("normals")
         normal.parm("file").set(path)

@@ -132,10 +132,11 @@ The bundled Substance Painter preset produces compatible names automatically.
   generic USD MaterialX builder.
 - **Triplanar with Pattern Breakup** adds randomized neighboring cells to hide
   obvious repetition. Karma uses its dedicated hex-triplanar color and normal
-  lookups; Arnold uses its native triplanar shader and cell breakup. Both modes
-  are supported by Karma, Arnold USD MaterialX, and native Arnold. Generic USD
-  MaterialX supports plain triplanar, but not randomized-cell breakup. MoonRay
-  is rejected because its Houdini integration has no compatible triplanar node.
+  lookups; generic MaterialX uses the same MaterialX-based Houdini compound;
+  Arnold uses its native triplanar shader and cell breakup. Both modes are
+  supported by generic MaterialX, Karma, Arnold USD MaterialX, and native
+  Arnold. MoonRay is rejected because its Houdini integration has no compatible
+  triplanar node.
 
 UV-based MaterialX images receive an explicit UV connection. Triplanar modes
 use object-space position and normals instead, so they do not depend on `st`.
