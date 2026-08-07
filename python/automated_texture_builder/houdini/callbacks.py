@@ -284,6 +284,10 @@ def _message(text: str, error: bool = False) -> None:
 
 def _solaris_nodes(controller: hou.Node):
     parent = controller.parent()
+    displayed_before = next(
+        (child for child in parent.children() if child.isDisplayFlagSet()),
+        None,
+    )
     requested = controller.evalParm("library_name").strip() or controller.name()
     owner = controller.path()
     library = next(
@@ -339,7 +343,14 @@ def _solaris_nodes(controller: hou.Node):
                     connection.inputIndex(), library, connection.outputIndex(),
                 )
             child.destroy()
-    library.setDisplayFlag(True)
+    # Creating a LOP can take the display flag, and older versions explicitly
+    # forced it onto the generated Material Library. Preserve the artist's
+    # currently displayed node instead. If the library was already displayed
+    # before this rebuild, leave that deliberate/current state unchanged.
+    if displayed_before is not None and displayed_before != library:
+        displayed_before.setDisplayFlag(True)
+    elif displayed_before is None:
+        library.setDisplayFlag(False)
     return library
 
 
