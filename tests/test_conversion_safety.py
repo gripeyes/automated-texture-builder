@@ -10,6 +10,7 @@ from automated_texture_builder.conversion import (
     maketx_output_type,
     maketx_storage_args,
     resolve_existing_tx_root,
+    should_skip_web_color_linearization,
 )
 
 
@@ -39,6 +40,62 @@ class ConversionSafetyTests(unittest.TestCase):
         self.assertEqual(
             maketx_storage_args("base_color", Path("hero_BaseColor.tif"), "uint16"),
             ["--format", "exr", "-d", "float"],
+        )
+
+    def test_png_jpeg_linearization_bypass_is_color_only(self):
+        self.assertTrue(should_skip_web_color_linearization(
+            "base_color", Path("downloaded_Albedo.jpg"), True,
+        ))
+        self.assertTrue(should_skip_web_color_linearization(
+            "specular_color", Path("paint_SpecularColor.png"), True,
+        ))
+        self.assertFalse(should_skip_web_color_linearization(
+            "specular_roughness", Path("paint_Roughness.png"), True,
+        ))
+        self.assertFalse(should_skip_web_color_linearization(
+            "base_color", Path("paint_BaseColor.tif"), True,
+        ))
+        self.assertFalse(should_skip_web_color_linearization(
+            "base_color", Path("paint_BaseColor.jpg"), False,
+        ))
+
+    def test_explicit_linear_ocio_rule_wins_over_web_bypass(self):
+        class Space:
+            def __init__(self, encoding):
+                self.encoding = encoding
+
+            def getEncoding(self):
+                return self.encoding
+
+        class Config:
+            def getColorSpace(self, name):
+                return Space({
+                    "sRGB - Texture": "sdr-video",
+                    "Linear Rec.709": "scene-linear",
+                    "Camera Log": "log",
+                }[name])
+
+        config = Config()
+        self.assertTrue(should_skip_web_color_linearization(
+            "base_color", Path("asset_BaseColor.png"), True,
+            config, "sRGB - Texture",
+        ))
+        self.assertFalse(should_skip_web_color_linearization(
+            "base_color", Path("asset_lin_rec709_BaseColor.png"), True,
+            config, "Linear Rec.709",
+        ))
+        self.assertFalse(should_skip_web_color_linearization(
+            "base_color", Path("asset_log_BaseColor.png"), True,
+            config, "Camera Log",
+        ))
+
+    def test_bypassed_byte_color_preserves_integer_storage(self):
+        self.assertEqual(
+            maketx_storage_args(
+                "base_color", Path("downloaded_Albedo.jpg"), "uint8",
+                color_transform=False,
+            ),
+            ["--format", "tiff", "-d", "uint8"],
         )
 
     def test_raw_maps_preserve_integer_storage(self):

@@ -15,6 +15,7 @@ class TextureFile:
     output_space: str = "Raw"
     source_pixel_type: str = ""
     output_pixel_type: str = ""
+    skip_linearization: bool = False
     output: Path | None = None
     status: str = "planned"
     before_info: dict[str, Any] = field(default_factory=dict)

@@ -155,6 +155,25 @@ The tool reads the active OCIO configuration and its `scene_linear` role. Color
 textures are converted to that scene-linear space when TX files are generated.
 Data maps such as roughness, metalness, normal and displacement remain Raw.
 
+PNG and JPEG color textures should normally stay on this conversion path.
+Downloaded albedo/base-color images and ordinary Substance color exports are
+usually sRGB-encoded, so their encoding must be decoded before lighting math.
+The tool asks OCIO to classify every full file path, then converts from that
+detected source space to the config's `scene_linear` role. Specific filename or
+folder tags therefore override generic extension rules; for example, the
+bundled configs recognize tags such as `_ACEScg_`, `_lin_rec709_`, `_Raw_`, and
+`_sRGB_`.
+
+**Skip PNG/JPEG Color Linearization** is an advanced escape hatch and is off by
+default. Enabling it preserves PNG/JPEG color-map pixel values only when OCIO
+classified them as display-referred, and stores their TX files as Raw without
+an OCIO transform. An explicit filename/path rule identifying a linear or log
+source still wins, so any required gamut or transfer conversion is preserved.
+The option never affects roughness, metalness, normals, height, or other data
+maps. Use it only when the pixels are already scene-linear in the project
+working space but the files cannot be renamed or classified correctly. A
+correct OCIO name/path rule remains preferable.
+
 ### Height and displacement
 
 Substance Painter uses Height as its default displacement source. The tool

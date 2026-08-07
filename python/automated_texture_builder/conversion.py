@@ -116,16 +116,46 @@ def image_pixel_type(path: Path, oiiotool: str | None = None) -> str:
 
 
 GEOMETRY_DETAIL_CHANNELS = {"height", "displacement", "vector_displacement"}
+WEB_COLOR_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 
-def maketx_output_type(channel: str, source_type: str) -> str:
+def should_skip_web_color_linearization(
+    channel: str, path: Path, enabled: bool,
+    config=None, source_space: str = "",
+) -> bool:
+    """Bypass only display-referred PNG/JPEG color maps.
+
+    An explicit OCIO filename/path rule that identifies a linear or log source
+    remains authoritative, so its required gamut/transfer conversion is kept.
+    """
+    if not (
+        enabled
+        and channel in COLOR_CHANNELS
+        and path.suffix.lower() in WEB_COLOR_EXTENSIONS
+    ):
+        return False
+    if config is None or not source_space:
+        return True
+    color_space = config.getColorSpace(source_space)
+    encoding = str(color_space.getEncoding()).strip().casefold() if color_space else ""
+    if encoding:
+        return encoding in {"sdr-video", "hdr-video", "display-referred"}
+    # Encoding metadata is optional in OCIO. This conservative fallback covers
+    # common sRGB naming without overriding spaces explicitly named as linear.
+    normalized = source_space.casefold().replace("_", " ").replace("-", " ")
+    return "srgb" in normalized and "linear" not in normalized
+
+
+def maketx_output_type(
+    channel: str, source_type: str, color_transform: bool = True,
+) -> str:
     """Choose storage from map semantics and the source's real pixel type."""
     source_type = source_type.lower()
     if channel in GEOMETRY_DETAIL_CHANNELS:
         # Displacement is evaluated geometrically and must never be quantized
         # down just because an incoming file happened to use integer storage.
         return "float"
-    if channel in COLOR_CHANNELS:
+    if channel in COLOR_CHANNELS and color_transform:
         # OCIO color conversion creates linear floating-point values. Half is
         # sufficient for 8-bit/half inputs; 16-bit and float sources use float
         # so their extra precision is not discarded during the transform.
@@ -143,9 +173,10 @@ def maketx_output_type(channel: str, source_type: str) -> str:
 
 def maketx_storage_args(
     channel: str, source: Path, source_type: str = "",
+    color_transform: bool = True,
 ) -> list[str]:
     """Choose a TX container and type without losing meaningful precision."""
-    output_type = maketx_output_type(channel, source_type)
+    output_type = maketx_output_type(channel, source_type, color_transform)
     if output_type in {"half", "float"}:
         return ["--format", "exr", "-d", output_type]
     if output_type in {"uint8", "sint8", "uint16", "sint16"}:
@@ -153,7 +184,7 @@ def maketx_storage_args(
     # Fallback for unusual/unknown inputs: maketx preserves the input type.
     if channel in GEOMETRY_DETAIL_CHANNELS:
         return ["--format", "exr", "-d", "float"]
-    if channel in COLOR_CHANNELS or source.suffix.lower() == ".exr" or channel == "normal":
+    if (channel in COLOR_CHANNELS and color_transform) or source.suffix.lower() == ".exr" or channel == "normal":
         return ["--format", "exr", "-d", "half"]
     return []
 
@@ -165,6 +196,7 @@ def convert(
     output_space: str | None = None,
     force: bool = False,
     inspect_images: bool = True,
+    skip_png_jpeg_linearization: bool = False,
 ) -> Path:
     source_root = source_root.expanduser().resolve()
     output_root = (output_root or source_root / "tx").expanduser().resolve()
@@ -176,14 +208,31 @@ def convert(
     if not maketx:
         raise RuntimeError("maketx was not found on PATH")
     sets = scan(source_root, output_root)
+    previous: dict[str, dict] = {}
+    previous_manifest = output_root / "automated_texture_manifest.json"
+    if previous_manifest.is_file():
+        try:
+            previous = {
+                item.get("output", ""): item
+                for item in json.loads(previous_manifest.read_text(encoding="utf-8")).get("textures", [])
+            }
+        except (OSError, ValueError, TypeError):
+            previous = {}
     failures: list[str] = []
     for texture_set in sets.values():
         for channel, textures in texture_set.maps.items():
             for texture in textures:
                 texture.source_space = classify(config, texture.source)
-                texture.output_space = output_space if channel in COLOR_CHANNELS else "Raw"
+                texture.skip_linearization = should_skip_web_color_linearization(
+                    channel, texture.source, skip_png_jpeg_linearization,
+                    config, texture.source_space,
+                )
+                transform_color = channel in COLOR_CHANNELS and not texture.skip_linearization
+                texture.output_space = output_space if transform_color else "Raw"
                 texture.source_pixel_type = image_pixel_type(texture.source, oiiotool)
-                texture.output_pixel_type = maketx_output_type(channel, texture.source_pixel_type)
+                texture.output_pixel_type = maketx_output_type(
+                    channel, texture.source_pixel_type, transform_color,
+                )
                 texture.output = _output_path(texture, source_root, output_root)
                 if inspect_images:
                     texture.before_info = inspect(texture.source, oiiotool)
@@ -195,10 +244,17 @@ def convert(
                     not texture.output_pixel_type
                     or stored_output_type == texture.output_pixel_type
                 )
+                prior = previous.get(str(texture.output), {})
+                settings_match = (
+                    bool(prior.get("skip_linearization", False))
+                    == texture.skip_linearization
+                    and prior.get("output_space", texture.output_space) == texture.output_space
+                )
                 current = (
                     texture.output.exists()
                     and texture.output.stat().st_mtime >= max(texture.source.stat().st_mtime, ocio_path.stat().st_mtime)
                     and storage_matches
+                    and settings_match
                 )
                 if current and not force:
                     texture.status = "current"
@@ -218,11 +274,14 @@ def convert(
                         texture.source_pixel_type or "unknown",
                         "--sattrib", "automated_texture_builder:output_pixel_type",
                         texture.output_pixel_type or "preserve-input",
+                        "--sattrib", "automated_texture_builder:skip_linearization",
+                        "true" if texture.skip_linearization else "false",
                     ]
                     command += maketx_storage_args(
                         channel, texture.source, texture.source_pixel_type,
+                        transform_color,
                     )
-                    if channel in COLOR_CHANNELS and texture.source_space != texture.output_space:
+                    if transform_color and texture.source_space != texture.output_space:
                         command += [
                             "--colorconfig", str(ocio_path), "--colorconvert",
                             texture.source_space, texture.output_space,
@@ -391,7 +450,7 @@ def write_manifest(
     sets: dict[str, TextureSet],
 ) -> Path:
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source_root": str(source_root),
         "output_root": str(output_root),

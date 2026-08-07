@@ -268,6 +268,19 @@ def build() -> Path:
         scene,
         "Color space assigned to the selected config's scene_linear role. Color textures are converted to this space; data textures remain Raw.",
     ))
+    skip_web = refresh_callback(hou.ToggleParmTemplate(
+        "skip_web_linearization",
+        "Skip PNG/JPEG Color Linearization",
+        False,
+    ))
+    skip_web.setConditional(
+        hou.parmCondType.DisableWhen,
+        "{ texture_workflow != generate_tx }",
+    )
+    color.addParmTemplate(explained(
+        skip_web,
+        "Advanced exception for PNG/JPEG color maps whose pixels are already scene-linear despite being classified as display-referred. Matching display-referred maps bypass OCIO conversion and are stored in TX as Raw. Explicit OCIO filename/path rules that identify linear or log inputs remain authoritative. Leave this off for downloaded textures and normal Substance color exports, which are usually sRGB-encoded.",
+    ))
     color.addParmTemplate(hou.SeparatorParmTemplate("sep_file_rules"))
     color.addParmTemplate(hou.LabelParmTemplate(
         "file_rules_heading",
@@ -276,7 +289,7 @@ def build() -> Path:
     for name, label, help_text in (
         ("rule_exr", "EXR Color Textures", "OCIO colorspace used to read recognized EXR color maps. This is separate from the TX conversion target."),
         ("rule_tiff", "TIFF Color Textures", "OCIO colorspace used to read recognized TIFF color maps. This is separate from the TX conversion target."),
-        ("rule_web", "PNG / JPEG Color Textures", "OCIO colorspace used to read PNG and JPEG color maps. These are normally read as sRGB - Texture, then converted to scene-linear only when TX generation is selected."),
+        ("rule_web", "PNG / JPEG Color Textures", "OCIO colorspace selected from the full file path. Specific name/path rules are evaluated before the extension fallback. These color maps are normally read as sRGB and converted to scene-linear during TX generation."),
         ("rule_data", "Data Maps", "Metalness, roughness, specular weight, normals, height and other numeric maps remain Raw and receive no color transform."),
         ("rule_target", "TX Color Texture Target", "Destination for color pixels when Generate / Update TX mode is selected. This follows OCIO's scene_linear role, such as ACEScg."),
     ):

@@ -81,6 +81,7 @@ def refresh_color_rules(node: hou.Node) -> None:
     """Summarize real OCIO classifications for source textures by file type."""
     fields = ("rule_exr", "rule_tiff", "rule_web", "rule_data", "rule_target", "rule_tx")
     workflow = _menu(node, "texture_workflow")
+    skip_web_linearization = bool(_parm(node, "skip_web_linearization", 0))
     try:
         explicit = None if node.evalParm("use_houdini_ocio") else node.evalParm("ocio_config")
         config = load_ocio(resolve_ocio(explicit))
@@ -102,10 +103,10 @@ def refresh_color_rules(node: hou.Node) -> None:
         for name in fields[:3]:
             _set_if_present(node, name, "Select a Source Texture Folder")
         _set_if_present(node, "rule_data", "Raw → Raw — no OCIO transform")
-        _set_if_present(
-            node, "rule_target",
-            "No TX conversion" if workflow == "source_direct" else "OCIO scene-linear",
-        )
+        target = "No TX conversion" if workflow == "source_direct" else "OCIO scene-linear"
+        if workflow == "generate_tx" and skip_web_linearization:
+            target += "; PNG/JPEG color override → Raw"
+        _set_if_present(node, "rule_target", target)
         _set_if_present(
             node, "rule_tx",
             tx_rule_status,
@@ -145,6 +146,12 @@ def refresh_color_rules(node: hou.Node) -> None:
                     f"Read as {', '.join(fallback_spaces)} "
                     "(OCIO extension rule; no matching maps found)"
                 )
+            if (
+                field == "rule_web"
+                and workflow == "generate_tx"
+                and skip_web_linearization
+            ):
+                text += " — advanced bypass enabled; PNG/JPEG color pixels remain unconverted"
             _set_if_present(node, field, text)
         data_count = sum(texture.channel not in COLOR_CHANNELS for texture in textures)
         _set_if_present(
@@ -156,7 +163,10 @@ def refresh_color_rules(node: hou.Node) -> None:
             _set_if_present(node, "rule_target", "No TX conversion — source images used directly")
             _set_if_present(node, "rule_tx", tx_rule_status)
         else:
-            _set_if_present(node, "rule_target", f"All color TX pixels → {destination}")
+            target = f"Color TX pixels → {destination}"
+            if skip_web_linearization:
+                target += "; PNG/JPEG color override → Raw (no OCIO conversion)"
+            _set_if_present(node, "rule_target", target)
             _set_if_present(node, "rule_tx", tx_rule_status)
     except Exception as exc:
         for name in fields:
@@ -185,6 +195,12 @@ def _update_conversion_summary(node: hou.Node, manifest: Path, workflow: str) ->
     data = json.loads(manifest.read_text(encoding="utf-8"))
     textures = data.get("textures", [])
     color_count = sum(item.get("channel") in COLOR_CHANNELS for item in textures)
+    skipped_color_count = sum(
+        item.get("channel") in COLOR_CHANNELS
+        and bool(item.get("skip_linearization", False))
+        for item in textures
+    )
+    converted_color_count = color_count - skipped_color_count
     data_count = len(textures) - color_count
     scene_linear = data.get("color_output_space", "the OCIO scene-linear space")
     if workflow == "generate_tx":
@@ -192,10 +208,13 @@ def _update_conversion_summary(node: hou.Node, manifest: Path, workflow: str) ->
         if failed:
             summary = f"Failed: {len(failed)} of {len(textures)} texture files did not convert."
         else:
-            summary = (
-                f"Success: {len(textures)} files — {color_count} color → {scene_linear}; "
-                f"{data_count} data → Raw."
-            )
+            color_summary = f"{converted_color_count} color → {scene_linear}"
+            if skipped_color_count:
+                color_summary += (
+                    f"; {skipped_color_count} PNG/JPEG color preserved as Raw "
+                    "(linearization bypassed)"
+                )
+            summary = f"Success: {len(textures)} files — {color_summary}; {data_count} data → Raw."
     elif workflow == "existing_tx":
         summary = (
             f"Success: {len(textures)} existing TX files; maketx not run — "
@@ -462,6 +481,7 @@ def run(node: hou.Node) -> None:
                     scene_linear,
                     bool(node.evalParm("force_rebuild")),
                     bool(node.evalParm("inspect_images")),
+                    bool(_parm(node, "skip_web_linearization", 0)),
                 )
             elif workflow == "existing_tx":
                 if source is None:

@@ -17,9 +17,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--no-inspect", action="store_true")
+    parser.add_argument(
+        "--skip-png-jpeg-linearization", action="store_true",
+        help=(
+            "Advanced override: preserve recognized PNG/JPEG color-map values "
+            "without converting them to OCIO scene-linear"
+        ),
+    )
     args = parser.parse_args(argv)
     manifest = convert(
-        args.textures, args.output, args.ocio, args.output_space, args.force, not args.no_inspect
+        args.textures, args.output, args.ocio, args.output_space, args.force,
+        not args.no_inspect, args.skip_png_jpeg_linearization,
     )
     print(manifest)
     return 0
