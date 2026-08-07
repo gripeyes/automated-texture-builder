@@ -174,6 +174,14 @@ maps. Use it only when the pixels are already scene-linear in the project
 working space but the files cannot be renamed or classified correctly. A
 correct OCIO name/path rule remains preferable.
 
+Generated TX filenames deliberately continue to mirror their source filenames,
+which keeps UDIM grouping, incremental updates, source deletion checks, and
+existing-TX discovery deterministic. Each TX is instead tagged internally with
+its detected source color space, baked color space, Raw lookup space, channel,
+and storage type. The JSON manifest records the same source/output information.
+The OCIO `.tx` rule must remain first and Raw so these baked pixels are never
+transformed a second time, regardless of tags in the original filename.
+
 ### Height and displacement
 
 Substance Painter uses Height as its default displacement source. The tool
