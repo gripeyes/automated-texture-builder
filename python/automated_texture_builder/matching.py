@@ -12,6 +12,16 @@ def normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
 
 
+def normalize_usd_root(value: str) -> str:
+    """Return a canonical absolute USD root path for assignment searches."""
+    path = value.strip()
+    if not path or path == "/":
+        return "/"
+    path = "/" + path.lstrip("/")
+    path = re.sub(r"/{2,}", "/", path)
+    return path.rstrip("/") or "/"
+
+
 def meaningful_name_tokens(value: str) -> list[str]:
     """Remove known export/import prefixes while preserving numeric identity."""
     tokens = [

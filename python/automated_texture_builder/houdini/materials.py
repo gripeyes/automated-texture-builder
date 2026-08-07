@@ -8,7 +8,7 @@ import hou
 import voptoolutils
 
 from automated_texture_builder.geometry_detail import geometry_detail_plan
-from automated_texture_builder.matching import match_materials_to_paths
+from automated_texture_builder.matching import match_materials_to_paths, normalize_usd_root
 
 
 OPENPBR_INPUTS = {
@@ -843,12 +843,16 @@ def build_materials(
 def assignment_candidates(stage, geometry_root: str) -> list[tuple[str, bool]]:
     """Return assignable USD prims below the requested root."""
     candidates = []
-    root = stage.GetPrimAtPath(geometry_root) if geometry_root else stage.GetPseudoRoot()
+    root_path = normalize_usd_root(geometry_root)
+    root = stage.GetPseudoRoot() if root_path == "/" else stage.GetPrimAtPath(root_path)
     if root:
         for prim in stage.Traverse():
             path = str(prim.GetPath())
-            root_path = geometry_root.rstrip("/")
-            in_root = not root_path or path == root_path or path.startswith(root_path + "/")
+            in_root = (
+                root_path == "/"
+                or path == root_path
+                or path.startswith(root_path + "/")
+            )
             if in_root and prim.GetTypeName() in {"Mesh", "GeomSubset"}:
                 candidates.append((path, prim.GetTypeName() == "GeomSubset"))
     return candidates

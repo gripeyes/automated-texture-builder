@@ -1,9 +1,17 @@
 import unittest
 
-from automated_texture_builder.matching import match_materials_to_paths
+from automated_texture_builder.matching import match_materials_to_paths, normalize_usd_root
 
 
 class MatchingTests(unittest.TestCase):
+    def test_usd_assignment_root_normalizes_trailing_and_duplicate_slashes(self):
+        self.assertEqual(normalize_usd_root("/sopcreate1/"), "/sopcreate1")
+        self.assertEqual(
+            normalize_usd_root("//sopcreate1//unwrapped///"),
+            "/sopcreate1/unwrapped",
+        )
+        self.assertEqual(normalize_usd_root("/"), "/")
+
     def test_tallsculpt_names_all_match_unique_meshes(self):
         names = (
             "Extract12", "Extract51", "PolySphere6_14",
