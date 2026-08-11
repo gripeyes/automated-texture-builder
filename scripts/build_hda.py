@@ -166,7 +166,7 @@ def build() -> Path:
             "Triplanar with Pattern Breakup",
         ),
         default_value=0,
-    ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D. Hex Pattern Breakup reduces repetition in UV-mapped materials. Triplanar projects in object space without requiring UVs. Breakup modes create one visible texture_controls node that drives all compatible lookups. USD MaterialX profiles use only standard MaterialX nodes; no Karma shader compound is inserted."))
+    ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode uses the selected renderer's native UV controls. Hex Pattern Breakup reduces repetition in UV-mapped MaterialX materials; MoonRay creates its native randomized triplanar variation. Triplanar projects in object space without requiring UVs. Breakup modes create one visible texture_controls node that drives all compatible lookups. USD MaterialX profiles use only standard MaterialX nodes; MoonRay materials contain only MoonRay shader nodes."))
     per_instance = hou.ToggleParmTemplate(
         "offset_per_instance", "Offset Texture Per Instance", False,
     )
@@ -175,7 +175,7 @@ def build() -> Path:
     )
     textures.addParmTemplate(explained(
         per_instance,
-        "Offsets each instance from a vector3 USD primvar. Repeating and Hex modes use XY; Triplanar modes use XYZ. A missing primvar resolves to zero and leaves the material unchanged.",
+        "Offsets each instance from a vector3 USD primvar. UV-based modes use XY; triplanar modes and MoonRay's native breakup variation use XYZ. A missing primvar resolves to zero and leaves the material unchanged.",
     ))
     offset_primvar = hou.StringParmTemplate(
         "instance_offset_primvar", "Instance Offset Primvar", 1,
@@ -369,16 +369,17 @@ tangents and displacement.
 
 Choose OpenPBR Surface or MaterialX Standard Surface, and choose a generic,
 Karma, Arnold, native Arnold, or MoonRay material builder. UV-based textures
-get an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles;
-Repeating mode adds a shared MtlX USD Transform 2D. Triplanar modes project
-textures in object space without UVs; the breakup variant uses one shared,
-renderer-neutral MaterialX position graph and a visible texture-controls node.
-Hex Pattern Breakup adds MaterialX 1.39 hex image and normal-map lookups to
-reduce obvious UV repetition.
+get an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles.
+MaterialX repeating mode adds a shared MtlX USD Transform 2D. Triplanar modes
+project textures in object space without UVs. MaterialX breakup uses a shared,
+renderer-neutral position graph. MoonRay uses its native Project Triplanar Map
+and Project Triplanar Normal Map nodes; its breakup variation exposes native
+random rotation, flip, offset, seed, scale and blend controls. No MaterialX
+nodes are inserted into a MoonRay material.
 
 Offset Texture Per Instance reads a vector3 USD primvar (by default
-atb_instance_offset). Repeating and Hex modes use XY; Triplanar modes use XYZ.
-Missing values are zero and do not change the material.
+atb_instance_offset). UV modes use XY; triplanar and MoonRay breakup modes use
+XYZ. Missing values are zero and do not change the material.
 
 Leave Houdini OCIO enabled unless the project requires another config. Color
 maps are converted to scene-linear; data maps and completed TX files stay Raw.

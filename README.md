@@ -126,9 +126,11 @@ The bundled Substance Painter preset produces compatible names automatically.
   Hex Tiled Normal Map node, while scalar maps take the red channel from the
   same randomized lookup. A single visible `texture_controls` node drives the
   tiling, rotation, scale, offset, falloff and contrast of every lookup in the
-  material. This mode is available for the MaterialX builder
-  profiles. Native Arnold and MoonRay do not expose an equivalent portable hex
-  lookup here, so the tool rejects that combination with a clear message.
+  material. MaterialX profiles use the standard MaterialX 1.39 implementation.
+  MoonRay uses its native randomized triplanar projection as the renderer's
+  pattern-breakup variation, with shared scale, blend, seed, rotation, flip and
+  offset controls. Native Arnold does not expose an equivalent hex lookup and
+  rejects this combination.
 - **Triplanar Projection** projects textures in object space without requiring
   usable mesh UVs. Generic, Karma and Arnold USD profiles all use the same
   standard MtlX Triplanar Projection graph.
@@ -140,8 +142,9 @@ The bundled Substance Painter preset produces compatible names automatically.
   directly, with no MtlX Convert, before the standard MtlX Normal Map decoding;
   the projection's normal input remains at its portable `Nobject` default.
   Generic MaterialX, Karma, Arnold USD MaterialX and native Arnold are
-  supported. MoonRay is rejected because its Houdini integration has no
-  compatible triplanar node.
+  supported. MoonRay uses its native Project Triplanar Map nodes, including the
+  dedicated normal-map variant. Its breakup mode uses MoonRay's built-in random
+  rotation, flip and offset controls.
 
 UV-based MaterialX images receive an explicit UV connection. Triplanar modes
 use object-space position and the projection node's standard `Nobject` default,

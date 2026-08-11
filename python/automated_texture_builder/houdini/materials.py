@@ -155,13 +155,37 @@ def _append_float_control(
     ))
 
 
+def _append_int_control(
+    templates: list[hou.ParmTemplate], name: str, label: str, default: int,
+    minimum: int, maximum: int,
+) -> None:
+    templates.append(hou.IntParmTemplate(
+        name, label, 1, default_value=(default,), min=minimum, max=maximum,
+    ))
+
+
+def _append_toggle_control(
+    templates: list[hou.ParmTemplate], name: str, label: str, default: bool,
+) -> None:
+    templates.append(hou.ToggleParmTemplate(name, label, default_value=default))
+
+
 def _add_texture_controls(
     builder: hou.Node, texture_mode: str, native_arnold: bool = False,
+    native_moonray: bool = False,
     offset_per_instance: bool = False, instance_offset_scale: float = 1.0,
 ) -> None:
     """Create one visible control node that drives every generated texture lookup."""
     controls: list[hou.ParmTemplate] = []
-    if texture_mode in {"triplanar", "triplanar_breakup"}:
+    if native_moonray and texture_mode in {"hex", "triplanar", "triplanar_breakup"}:
+        _append_float_control(controls, "atb_projection_scale", "Projection Scale", 1.0, 0.001, 100.0)
+        _append_float_control(controls, "atb_projection_blend", "Projection Blend", 0.5, 0.0, 1.0)
+        if texture_mode in {"hex", "triplanar_breakup"}:
+            _append_int_control(controls, "atb_random_seed", "Random Seed", 8241, 0, 2147483647)
+            _append_toggle_control(controls, "atb_random_rotation", "Random Rotation", True)
+            _append_toggle_control(controls, "atb_random_flip", "Random Flip", True)
+            _append_toggle_control(controls, "atb_random_offset", "Random Offset", True)
+    elif texture_mode in {"triplanar", "triplanar_breakup"}:
         _append_float_control(controls, "atb_projection_scale", "Projection Scale", 1.0, 0.001, 100.0)
         _append_float_control(controls, "atb_projection_blend", "Projection Blend", 1.0, 0.0, 1.0)
         if texture_mode == "triplanar_breakup":
@@ -692,11 +716,21 @@ MOONRAY_TYPES = {
     "vector_displacement": "Vop::DW_MOONRAY::VectorDisplacement::1",
     "attribute": "Vop::DW_MOONRAY::AttributeMap::1",
     "operation": "Vop::DW_MOONRAY::OpMap::1",
+    "triplanar": "Vop::DW_MOONRAY::ProjectTriplanarMap::2",
+    "triplanar_normal": "Vop::DW_MOONRAY::ProjectTriplanarNormalMap::2",
 }
 
 
-def _ensure_moonray_types() -> None:
-    if hou.nodeType(hou.vopNodeTypeCategory(), MOONRAY_TYPES["base"]) is not None:
+def _ensure_moonray_types(texture_mode: str) -> None:
+    category = hou.vopNodeTypeCategory()
+    required = set(MOONRAY_TYPES) - {"triplanar", "triplanar_normal"}
+    if texture_mode in {"hex", "triplanar", "triplanar_breakup"}:
+        required.update({"triplanar", "triplanar_normal"})
+    missing = {
+        key: node_type for key, node_type in MOONRAY_TYPES.items()
+        if key in required and hou.nodeType(category, node_type) is None
+    }
+    if not missing:
         return
     roots = [
         Path("/Applications/MoonRay/installs/openmoonray/plugin/houdini/otls"),
@@ -704,12 +738,18 @@ def _ensure_moonray_types() -> None:
     for root in roots:
         if not root.is_dir():
             continue
-        for node_type in MOONRAY_TYPES.values():
+        for node_type in missing.values():
             asset = root / f"{node_type}.hda"
             if asset.is_file():
                 hou.hda.installFile(str(asset))
-    if hou.nodeType(hou.vopNodeTypeCategory(), MOONRAY_TYPES["base"]) is None:
-        raise RuntimeError("MoonRay Houdini shader assets are not installed or available.")
+    unavailable = [
+        key for key, node_type in MOONRAY_TYPES.items()
+        if key in required and hou.nodeType(category, node_type) is None
+    ]
+    if unavailable:
+        raise RuntimeError(
+            "MoonRay Houdini shader assets are unavailable: " + ", ".join(unavailable)
+        )
 
 
 def _moonray_connector(builder: hou.Node, name: str, label: str, parmtype: int) -> hou.Node:
@@ -725,6 +765,10 @@ def _moonray_image(
     builder: hou.Node, name: str, item: dict, texture_mode: str,
     instance_offset_primvar: str = "",
 ) -> hou.Node:
+    if texture_mode in {"hex", "triplanar", "triplanar_breakup"}:
+        return _moonray_projection(
+            builder, name, item, texture_mode, instance_offset_primvar,
+        )
     image = builder.createNode(MOONRAY_TYPES["image"], name)
     image.parm("texture").set(item["path"])
     lookup_space = item.get("lookup_space", "Raw")
@@ -733,17 +777,58 @@ def _moonray_image(
     )
     image.parm("wrap_around").set(1 if texture_mode == "repeat" else 0)
     if instance_offset_primvar and texture_mode == "repeat":
-        offset = builder.node("instance_offset_scaled")
-        if offset is None:
-            value = builder.createNode(MOONRAY_TYPES["attribute"], "instance_offset")
-            value.parm("primitive_attribute_name").set(instance_offset_primvar)
-            value.parm("primitive_attribute_type").set("vec3f")
-            offset = builder.createNode(MOONRAY_TYPES["operation"], "instance_offset_scaled")
-            offset.parm("operation").set("multiply")
-            _connect(offset, "op1", value)
-            _reference(offset.parm("op1_factor"), "atb_instance_offset_scale")
-        _connect(image, "offset", offset)
+        _connect(image, "offset", _moonray_instance_offset(builder, instance_offset_primvar))
     return image
+
+
+def _moonray_instance_offset(builder: hou.Node, primvar: str) -> hou.Node:
+    offset = builder.node("instance_offset_scaled")
+    if offset is not None:
+        return offset
+    value = builder.createNode(MOONRAY_TYPES["attribute"], "instance_offset")
+    value.parm("primitive_attribute_name").set(primvar)
+    value.parm("primitive_attribute_type").set("vec3f")
+    offset = builder.createNode(MOONRAY_TYPES["operation"], "instance_offset_scaled")
+    offset.parm("operation").set("multiply")
+    _connect(offset, "op1", value)
+    _reference(offset.parm("op1_factor"), "atb_instance_offset_scale")
+    return offset
+
+
+def _moonray_projection(
+    builder: hou.Node, name: str, item: dict, texture_mode: str,
+    instance_offset_primvar: str = "", normal: bool = False,
+) -> hou.Node:
+    """Build MoonRay's native triplanar lookup and randomized breakup variant."""
+    node_type = MOONRAY_TYPES["triplanar_normal" if normal else "triplanar"]
+    projection = builder.createNode(node_type, name)
+    path = item["path"]
+    projection.parm("number_of_textures").set("one")
+    for axis in ("positive_x", "positive_y", "positive_z", "negative_x", "negative_y", "negative_z"):
+        projection.parm(axis + "_texture").set(path)
+    projection.parm("projection_mode").set("TRS")
+    _reference(projection.parm("transition_width"), "atb_projection_blend")
+    _reference(projection.parm("scalex"), "atb_projection_scale")
+    _reference(projection.parm("scaley"), "atb_projection_scale")
+    _reference(projection.parm("scalez"), "atb_projection_scale")
+    breakup = texture_mode in {"hex", "triplanar_breakup"}
+    if breakup:
+        _reference(projection.parm("random_seed"), "atb_random_seed")
+        _reference(projection.parm("randomize_rotation"), "atb_random_rotation")
+        _reference(projection.parm("randomize_flip"), "atb_random_flip")
+        _reference(projection.parm("randomize_offset"), "atb_random_offset")
+    if normal:
+        projection.parm("normal_encoding").set("[0,1]")
+    if instance_offset_primvar:
+        _connect(
+            projection, "translate",
+            _moonray_instance_offset(builder, instance_offset_primvar),
+        )
+    projection.setComment(
+        "MoonRay native randomized triplanar variation. No MaterialX nodes are used."
+        if breakup else "MoonRay native triplanar projection."
+    )
+    return projection
 
 
 def _build_moonray(
@@ -753,7 +838,7 @@ def _build_moonray(
     instance_offset_primvar: str = "atb_instance_offset",
     instance_offset_scale: float = 1.0,
 ) -> dict[str, str]:
-    _ensure_moonray_types()
+    _ensure_moonray_types(texture_mode)
     clear_generated(library)
     material_paths: dict[str, str] = {}
     scalar_mapping = {
@@ -790,7 +875,7 @@ def _build_moonray(
         builder.setUserData("automated_texture_builder", "1")
         builder.setMaterialFlag(True)
         _add_texture_controls(
-            builder, texture_mode,
+            builder, texture_mode, native_moonray=True,
             offset_per_instance=offset_per_instance,
             instance_offset_scale=instance_offset_scale,
         )
@@ -825,12 +910,18 @@ def _build_moonray(
                 )
                 _connect(surface, input_name, image)
         if "normal" in maps:
-            normal = builder.createNode(MOONRAY_TYPES["normal"], "normal")
-            normal.parm("tangent_space_normal_texture").set(maps["normal"]["path"])
-            normal.parm("normal_encoding").set("[0,1]")
-            normal.parm("wrap_around").set(1 if texture_mode == "repeat" else 0)
-            if instance_primvar and texture_mode == "repeat":
-                _connect(normal, "offset", builder.node("instance_offset_scaled"))
+            if texture_mode in {"hex", "triplanar", "triplanar_breakup"}:
+                normal = _moonray_projection(
+                    builder, "normal", maps["normal"], texture_mode,
+                    instance_primvar, normal=True,
+                )
+            else:
+                normal = builder.createNode(MOONRAY_TYPES["normal"], "normal")
+                normal.parm("tangent_space_normal_texture").set(maps["normal"]["path"])
+                normal.parm("normal_encoding").set("[0,1]")
+                normal.parm("wrap_around").set(1 if texture_mode == "repeat" else 0)
+                if instance_primvar and texture_mode == "repeat":
+                    _connect(normal, "offset", builder.node("instance_offset_scaled"))
             _connect(surface, "input_normal", normal)
         bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
         if bump_channel:
@@ -899,17 +990,11 @@ def build_materials(
     instance_offset_scale: float = 1.0,
 ) -> dict[str, str]:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if texture_mode == "hex" and profile in {"arnold_native", "moonray"}:
+    if texture_mode == "hex" and profile == "arnold_native":
         raise RuntimeError(
             "Hex Pattern Breakup uses MaterialX 1.39 Hex Tiled Image nodes. "
             "Choose a USD MaterialX, Karma, or Arnold USD MaterialX builder, "
-            "or use Repeating Texture for native Arnold and MoonRay."
-        )
-    if texture_mode in {"triplanar", "triplanar_breakup"} and profile == "moonray":
-        raise RuntimeError(
-            "Triplanar modes are available for Karma, Arnold USD MaterialX, "
-            "native Arnold, and generic MaterialX. "
-            "MoonRay does not provide a compatible triplanar projection node."
+            "or use Repeating Texture for native Arnold."
         )
     if profile == "arnold_native":
         return _build_arnold_native(
