@@ -157,6 +157,7 @@ def _append_float_control(
 
 def _add_texture_controls(
     builder: hou.Node, texture_mode: str, native_arnold: bool = False,
+    offset_per_instance: bool = False, instance_offset_scale: float = 1.0,
 ) -> None:
     """Create one visible control node that drives every generated texture lookup."""
     controls: list[hou.ParmTemplate] = []
@@ -183,6 +184,13 @@ def _add_texture_controls(
         _append_float_control(controls, "atb_offset_max", "Offset Maximum", 1.0, -10.0, 10.0)
         _append_float_control(controls, "atb_pattern_falloff", "Pattern Falloff", 0.5, 0.0, 1.0)
         _append_float_control(controls, "atb_pattern_contrast", "Pattern Contrast", 0.5, 0.0, 1.0)
+    if offset_per_instance and texture_mode in {
+        "repeat", "hex", "triplanar", "triplanar_breakup",
+    }:
+        _append_float_control(
+            controls, "atb_instance_offset_scale", "Per-Instance Offset Scale",
+            instance_offset_scale, 0.0, 100.0,
+        )
     if not controls:
         return
     control = builder.createNode("null", "texture_controls")
@@ -226,7 +234,39 @@ def _apply_hex_controls(node: hou.Node) -> None:
         _reference(node.parm(parm_name), control_name)
 
 
-def _triplanar_position(parent: hou.Node, breakup: bool) -> hou.Node:
+def _instance_offset_vector3(parent: hou.Node, primvar: str) -> hou.Node:
+    """Read and scale one renderer-neutral vector3 USD primvar."""
+    result = parent.node("instance_offset_scaled")
+    if result is not None:
+        return result
+    value = parent.createNode("mtlxgeompropvalue", "instance_offset")
+    value.parm("signature").set("vector3")
+    value.parm("geomprop").set(primvar)
+    # Missing primvars use MaterialX's zero default and preserve the old look.
+    result = parent.createNode("mtlxmultiply", "instance_offset_scaled")
+    result.parm("signature").set("vector3FA")
+    _connect(result, "in1", value)
+    _reference(result.parm("in2"), "atb_instance_offset_scale")
+    return result
+
+
+def _add_instance_offset_2d(
+    parent: hou.Node, coordinates: hou.Node, primvar: str,
+) -> hou.Node:
+    """Add the XY components of the shared vector3 offset to UV coordinates."""
+    xy = parent.createNode("mtlxconvert", "instance_offset_xy")
+    xy.parm("signature").set("vector3vector2")
+    _connect(xy, "in", _instance_offset_vector3(parent, primvar))
+    result = parent.createNode("mtlxadd", "uv_instance_offset")
+    result.parm("signature").set("vector2")
+    _connect(result, "in1", coordinates)
+    _connect(result, "in2", xy)
+    return result
+
+
+def _triplanar_position(
+    parent: hou.Node, breakup: bool, instance_offset_primvar: str = "",
+) -> hou.Node:
     """Build one renderer-neutral MaterialX position graph shared by all maps."""
     result = parent.node("triplanar_position_output")
     if result is not None:
@@ -238,10 +278,20 @@ def _triplanar_position(parent: hou.Node, breakup: bool) -> hou.Node:
     _connect(scaled, "in1", position)
     _reference(scaled.parm("in2"), "atb_projection_scale")
     result = scaled
+    if instance_offset_primvar:
+        offset_position = parent.createNode("mtlxadd", "triplanar_position_offset")
+        offset_position.parm("signature").set("vector3")
+        _connect(offset_position, "in1", scaled)
+        _connect(
+            offset_position, "in2",
+            _instance_offset_vector3(parent, instance_offset_primvar),
+        )
+        result = offset_position
+    base_position = result
     if breakup:
         frequency = parent.createNode("mtlxmultiply", "breakup_frequency")
         frequency.parm("signature").set("vector3FA")
-        _connect(frequency, "in1", scaled)
+        _connect(frequency, "in1", result)
         _reference(frequency.parm("in2"), "atb_breakup_frequency")
         noise = parent.createNode("mtlxnoise3d", "breakup_noise")
         noise.parm("signature").set("vector3")
@@ -252,7 +302,7 @@ def _triplanar_position(parent: hou.Node, breakup: bool) -> hou.Node:
         _reference(amount.parm("in2"), "atb_breakup_amount")
         result = parent.createNode("mtlxadd", "triplanar_position_output")
         result.parm("signature").set("vector3")
-        _connect(result, "in1", scaled)
+        _connect(result, "in1", base_position)
         _connect(result, "in2", amount)
     else:
         result.setName("triplanar_position_output", unique_name=False)
@@ -263,6 +313,7 @@ def _image(
     parent: hou.Node, name: str, path: str, signature: str,
     uv: hou.Node, texture_mode: str, lookup_space: str = "Raw",
     uv_transform: hou.Node | None = None, profile: str = "generic",
+    instance_offset_primvar: str = "",
 ) -> hou.Node:
     if texture_mode in {"triplanar", "triplanar_breakup"}:
         breakup = texture_mode == "triplanar_breakup"
@@ -274,7 +325,10 @@ def _image(
                 colorspace = projection.parm("file" + axis + "colorspace")
                 if colorspace is not None:
                     colorspace.set(lookup_space)
-            _connect(projection, "position", _triplanar_position(parent, breakup))
+            _connect(
+                projection, "position",
+                _triplanar_position(parent, breakup, instance_offset_primvar),
+            )
             _reference(projection.parm("blend"), "atb_projection_blend")
             # Do not connect the normal input. Its standard Nobject default is
             # portable; an explicit MtlX Normal breaks Arnold's translation.
@@ -315,6 +369,7 @@ def _image(
 def _normal_texture(
     parent: hou.Node, name: str, path: str, uv: hou.Node,
     texture_mode: str, uv_transform: hou.Node | None, profile: str = "generic",
+    instance_offset_primvar: str = "",
 ) -> hou.Node:
     """Create a normal lookup appropriate for ordinary or hex-broken UV tiling."""
     if texture_mode == "hex":
@@ -328,7 +383,7 @@ def _normal_texture(
     if texture_mode in {"triplanar", "triplanar_breakup"}:
         image = _image(
             parent, name, path, "vector3", uv, texture_mode,
-            "Raw", uv_transform, profile,
+            "Raw", uv_transform, profile, instance_offset_primvar,
         )
         normal = parent.createNode("mtlxnormalmap", name + "_normalmap")
         _connect(normal, "in", image)
@@ -342,7 +397,9 @@ def _normal_texture(
     return normal
 
 
-def _uv_transform_node(builder: hou.Node, uv: hou.Node) -> hou.Node:
+def _uv_transform_node(
+    builder: hou.Node, uv: hou.Node, instance_offset_primvar: str = "",
+) -> hou.Node:
     """One shared USD-compatible 2D transform for all UV-tiled image maps."""
     transform = builder.createNode("mtlxUsdTransform2d", "uv_transform2d")
     _connect(transform, "in", uv)
@@ -352,6 +409,8 @@ def _uv_transform_node(builder: hou.Node, uv: hou.Node) -> hou.Node:
     transform.parm("translationx").set(0.0)
     transform.parm("translationy").set(0.0)
     transform.setPosition(hou.Vector2(-7.0, -0.5))
+    if instance_offset_primvar:
+        return _add_instance_offset_2d(builder, transform, instance_offset_primvar)
     return transform
 
 
@@ -412,18 +471,56 @@ def _publish_library(library: hou.Node, material_paths: dict[str, str]) -> dict[
     return material_paths
 
 
-def _arnold_image(builder: hou.Node, name: str, item: dict, texture_mode: str) -> hou.Node:
+def _arnold_instance_offset(builder: hou.Node, primvar: str) -> hou.Node:
+    result = builder.node("instance_offset_scaled")
+    if result is not None:
+        return result
+    value = builder.createNode("arnold::user_data_rgb", "instance_offset")
+    value.parm("attribute").set(primvar)
+    result = builder.createNode("arnold::multiply", "instance_offset_scaled")
+    _connect_output(result, "input1", value, "rgb")
+    for component in "rgb":
+        _reference(result.parm("input2" + component), "atb_instance_offset_scale")
+    return result
+
+
+def _arnold_offset_uv(builder: hou.Node, primvar: str) -> hou.Node:
+    result = builder.node("uv_instance_offset")
+    if result is not None:
+        return result
+    uv = builder.createNode("arnold::user_data_rgb", "uv_st")
+    uv.parm("attribute").set("st")
+    result = builder.createNode("arnold::add", "uv_instance_offset")
+    _connect_output(result, "input1", uv, "rgb")
+    _connect_output(result, "input2", _arnold_instance_offset(builder, primvar), "rgb")
+    return result
+
+
+def _arnold_image(
+    builder: hou.Node, name: str, item: dict, texture_mode: str,
+    instance_offset_primvar: str = "",
+) -> hou.Node:
     image = builder.createNode("arnold::image", name)
     image.parm("filename").set(item["path"])
     image.parm("color_space").set(item.get("lookup_space", "Raw"))
     if texture_mode == "repeat":
         image.parm("swrap").set("periodic")
         image.parm("twrap").set("periodic")
+        if instance_offset_primvar:
+            _connect_output(
+                image, "uvcoords",
+                _arnold_offset_uv(builder, instance_offset_primvar), "rgb",
+            )
     if texture_mode not in {"triplanar", "triplanar_breakup"}:
         return image
     projection = builder.createNode("arnold::triplanar", name + "_triplanar")
     _connect_output(projection, "input", image, "rgba")
     projection.parm("coord_space").set("object")
+    if instance_offset_primvar:
+        _connect_output(
+            projection, "offset",
+            _arnold_instance_offset(builder, instance_offset_primvar), "rgb",
+        )
     for axis in "xyz":
         _reference(projection.parm("scale" + axis), "atb_projection_scale")
     _reference(projection.parm("blend"), "atb_projection_blend")
@@ -445,6 +542,9 @@ def _arnold_texture_output(texture_mode: str, output_name: str) -> str:
 def _build_arnold_native(
     library: hou.Node, data: dict, texture_mode: str,
     height_scale: float, height_zero: float, detail_mode: str, bump_scale: float,
+    offset_per_instance: bool = False,
+    instance_offset_primvar: str = "atb_instance_offset",
+    instance_offset_scale: float = 1.0,
 ) -> dict[str, str]:
     clear_generated(library)
     material_paths: dict[str, str] = {}
@@ -491,16 +591,24 @@ def _build_arnold_native(
         set_name = texture_set["name"]
         builder = library.createNode("arnold_materialbuilder", safe_name(set_name))
         builder.setUserData("automated_texture_builder", "1")
-        _add_texture_controls(builder, texture_mode, native_arnold=True)
+        _add_texture_controls(
+            builder, texture_mode, native_arnold=True,
+            offset_per_instance=offset_per_instance,
+            instance_offset_scale=instance_offset_scale,
+        )
         surface = builder.createNode("arnold::standard_surface", "standard_surface")
         output = builder.node("OUT_material")
         _connect(output, "surface", surface)
         maps = texture_set["maps"]
+        instance_primvar = instance_offset_primvar if offset_per_instance else ""
         normal_node = None
         for offset, (channel, (input_name, output_name)) in enumerate(mapping.items()):
             if channel not in maps or input_name not in surface.inputNames():
                 continue
-            image = _arnold_image(builder, channel, maps[channel], texture_mode)
+            image = _arnold_image(
+                builder, channel, maps[channel], texture_mode,
+                instance_primvar,
+            )
             image.setPosition(hou.Vector2(-4.5, 5.0 - offset * 1.0))
             _connect_output(
                 surface, input_name, image,
@@ -511,7 +619,9 @@ def _build_arnold_native(
             if parm is not None:
                 parm.set(1)
         if "normal" in maps:
-            image = _arnold_image(builder, "normal_image", maps["normal"], texture_mode)
+            image = _arnold_image(
+                builder, "normal_image", maps["normal"], texture_mode, instance_primvar,
+            )
             if image.parm("color_space"):
                 image.parm("color_space").set("Raw")
             normal = builder.createNode("arnold::normal_map", "normal")
@@ -522,7 +632,10 @@ def _build_arnold_native(
             _connect(surface, "normal", normal)
             normal_node = normal
         if "coat_normal" in maps and "coat_normal" in surface.inputNames():
-            image = _arnold_image(builder, "coat_normal_image", maps["coat_normal"], texture_mode)
+            image = _arnold_image(
+                builder, "coat_normal_image", maps["coat_normal"], texture_mode,
+                instance_primvar,
+            )
             if image.parm("color_space"):
                 image.parm("color_space").set("Raw")
             coat_normal = builder.createNode("arnold::normal_map", "coat_normal")
@@ -533,7 +646,9 @@ def _build_arnold_native(
             _connect(surface, "coat_normal", coat_normal)
         bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
         if bump_channel:
-            image = _arnold_image(builder, bump_channel, maps[bump_channel], texture_mode)
+            image = _arnold_image(
+                builder, bump_channel, maps[bump_channel], texture_mode, instance_primvar,
+            )
             if image.parm("color_space"):
                 image.parm("color_space").set("Raw")
             bump = builder.createNode("arnold::bump2d", bump_channel + "_bump")
@@ -546,6 +661,7 @@ def _build_arnold_native(
             vector = displacement_channel == "vector_displacement"
             image = _arnold_image(
                 builder, displacement_channel, maps[displacement_channel], texture_mode,
+                instance_primvar,
             )
             if image.parm("color_space"):
                 image.parm("color_space").set("Raw")
@@ -574,6 +690,8 @@ MOONRAY_TYPES = {
     "to_float": "Vop::DW_MOONRAY::MultiChannelToFloatMap::1",
     "displacement": "Vop::DW_MOONRAY::NormalDisplacement::1",
     "vector_displacement": "Vop::DW_MOONRAY::VectorDisplacement::1",
+    "attribute": "Vop::DW_MOONRAY::AttributeMap::1",
+    "operation": "Vop::DW_MOONRAY::OpMap::1",
 }
 
 
@@ -605,6 +723,7 @@ def _moonray_connector(builder: hou.Node, name: str, label: str, parmtype: int) 
 
 def _moonray_image(
     builder: hou.Node, name: str, item: dict, texture_mode: str,
+    instance_offset_primvar: str = "",
 ) -> hou.Node:
     image = builder.createNode(MOONRAY_TYPES["image"], name)
     image.parm("texture").set(item["path"])
@@ -613,12 +732,26 @@ def _moonray_image(
         "raw" if lookup_space.casefold() == "raw" else lookup_space
     )
     image.parm("wrap_around").set(1 if texture_mode == "repeat" else 0)
+    if instance_offset_primvar and texture_mode == "repeat":
+        offset = builder.node("instance_offset_scaled")
+        if offset is None:
+            value = builder.createNode(MOONRAY_TYPES["attribute"], "instance_offset")
+            value.parm("primitive_attribute_name").set(instance_offset_primvar)
+            value.parm("primitive_attribute_type").set("vec3f")
+            offset = builder.createNode(MOONRAY_TYPES["operation"], "instance_offset_scaled")
+            offset.parm("operation").set("multiply")
+            _connect(offset, "op1", value)
+            _reference(offset.parm("op1_factor"), "atb_instance_offset_scale")
+        _connect(image, "offset", offset)
     return image
 
 
 def _build_moonray(
     library: hou.Node, data: dict, texture_mode: str,
     height_scale: float, height_zero: float, detail_mode: str,
+    offset_per_instance: bool = False,
+    instance_offset_primvar: str = "atb_instance_offset",
+    instance_offset_scale: float = 1.0,
 ) -> dict[str, str]:
     _ensure_moonray_types()
     clear_generated(library)
@@ -656,17 +789,28 @@ def _build_moonray(
         builder = library.createNode("subnet", safe_name(set_name))
         builder.setUserData("automated_texture_builder", "1")
         builder.setMaterialFlag(True)
+        _add_texture_controls(
+            builder, texture_mode,
+            offset_per_instance=offset_per_instance,
+            instance_offset_scale=instance_offset_scale,
+        )
         surface = builder.createNode(MOONRAY_TYPES["base"], "dwa_base")
         surface_output = _moonray_connector(builder, "surface", "Surface", 24)
         _connect(surface_output, "suboutput", surface)
         maps = texture_set["maps"]
+        instance_primvar = instance_offset_primvar if offset_per_instance else ""
         if "base_color" in maps:
-            basecolor = _moonray_image(builder, "basecolor", maps["base_color"], texture_mode)
+            basecolor = _moonray_image(
+                builder, "basecolor", maps["base_color"], texture_mode, instance_primvar,
+            )
             _connect(surface, "albedo", basecolor)
             _connect(surface, "metallic_color", basecolor)
         for channel, input_name in scalar_mapping.items():
             if channel in maps:
-                image = _moonray_image(builder, channel + "_image", maps[channel], texture_mode)
+                image = _moonray_image(
+                    builder, channel + "_image", maps[channel], texture_mode,
+                    instance_primvar,
+                )
                 # Direct Map-to-float connections match the verified fixed scene.
                 _connect(surface, input_name, image)
         if "transmission_dispersion_abbe_number" in maps:
@@ -675,13 +819,18 @@ def _build_moonray(
             surface.parm("thin_geometry").set(1)
         for channel, input_name in color_mapping.items():
             if channel in maps:
-                image = _moonray_image(builder, channel + "_image", maps[channel], texture_mode)
+                image = _moonray_image(
+                    builder, channel + "_image", maps[channel], texture_mode,
+                    instance_primvar,
+                )
                 _connect(surface, input_name, image)
         if "normal" in maps:
             normal = builder.createNode(MOONRAY_TYPES["normal"], "normal")
             normal.parm("tangent_space_normal_texture").set(maps["normal"]["path"])
             normal.parm("normal_encoding").set("[0,1]")
             normal.parm("wrap_around").set(1 if texture_mode == "repeat" else 0)
+            if instance_primvar and texture_mode == "repeat":
+                _connect(normal, "offset", builder.node("instance_offset_scaled"))
             _connect(surface, "input_normal", normal)
         bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
         if bump_channel:
@@ -692,6 +841,7 @@ def _build_moonray(
         if displacement_channel == "vector_displacement":
             vector_image = _moonray_image(
                 builder, "vector_displacement_image", maps[displacement_channel], texture_mode,
+                instance_primvar,
             )
             displacement = builder.createNode(
                 MOONRAY_TYPES["vector_displacement"], "vector_displacement",
@@ -703,6 +853,7 @@ def _build_moonray(
         elif displacement_channel:
             height_image = _moonray_image(
                 builder, displacement_channel + "_image", maps[displacement_channel], texture_mode,
+                instance_primvar,
             )
             height_red = builder.createNode(MOONRAY_TYPES["to_float"], displacement_channel + "_red")
             displacement = builder.createNode(
@@ -743,6 +894,9 @@ def build_materials(
     height_zero: float = 0.0,
     detail_mode: str = "auto",
     bump_scale: float = 1.0,
+    offset_per_instance: bool = False,
+    instance_offset_primvar: str = "atb_instance_offset",
+    instance_offset_scale: float = 1.0,
 ) -> dict[str, str]:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     if texture_mode == "hex" and profile in {"arnold_native", "moonray"}:
@@ -760,11 +914,13 @@ def build_materials(
     if profile == "arnold_native":
         return _build_arnold_native(
             library, data, texture_mode, height_scale, height_zero, detail_mode,
-            bump_scale,
+            bump_scale, offset_per_instance, instance_offset_primvar,
+            instance_offset_scale,
         )
     if profile == "moonray":
         return _build_moonray(
             library, data, texture_mode, height_scale, height_zero, detail_mode,
+            offset_per_instance, instance_offset_primvar, instance_offset_scale,
         )
     clear_generated(library)
     material_paths: dict[str, str] = {}
@@ -773,12 +929,20 @@ def build_materials(
         set_name = texture_set["name"]
         node_name = safe_name(set_name)
         builder = _make_builder(library, node_name, profile)
-        _add_texture_controls(builder, texture_mode)
+        _add_texture_controls(
+            builder, texture_mode,
+            offset_per_instance=offset_per_instance,
+            instance_offset_scale=instance_offset_scale,
+        )
         surface = _replace_surface(builder, surface_model)
         surface.setPosition(hou.Vector2(1.0, 1.0))
         displacement = builder.node("mtlxdisplacement")
         uv = _uv_node(builder, uv_primvar)
-        uv_transform = _uv_transform_node(builder, uv) if texture_mode in {"repeat", "hex"} else None
+        instance_primvar = instance_offset_primvar if offset_per_instance else ""
+        uv_transform = (
+            _uv_transform_node(builder, uv, instance_primvar)
+            if texture_mode in {"repeat", "hex"} else None
+        )
         maps = texture_set["maps"]
         for offset, (channel, (input_name, signature)) in enumerate(input_map.items()):
             if channel not in maps or input_name not in surface.inputNames():
@@ -787,7 +951,7 @@ def build_materials(
             image = _image(
                 builder, channel, path, signature, uv, texture_mode,
                 maps[channel].get("lookup_space", "Raw"),
-                uv_transform, profile,
+                uv_transform, profile, instance_primvar,
             )
             image.setPosition(hou.Vector2(-4.5, 5.0 - offset * 1.1))
             _connect(surface, input_name, image)
@@ -800,7 +964,7 @@ def build_materials(
                     continue
                 tangent = _image(
                     builder, channel, maps[channel]["path"], "vector3", uv,
-                    texture_mode, "Raw", uv_transform, profile,
+                    texture_mode, "Raw", uv_transform, profile, instance_primvar,
                 )
                 _connect(surface, input_name, tangent)
             for channel, input_name in (
@@ -812,14 +976,14 @@ def build_materials(
                     continue
                 angle = _image(
                     builder, channel, maps[channel]["path"], "float", uv,
-                    texture_mode, "Raw", uv_transform, profile,
+                    texture_mode, "Raw", uv_transform, profile, instance_primvar,
                 )
                 _connect(surface, input_name, _angle_to_tangent(builder, angle, channel))
         thin_walled_input = "geometry_thin_walled" if surface_model == "openpbr" else "thin_walled"
         if "thin_walled" in maps:
             mask = _image(
                 builder, "thin_walled", maps["thin_walled"]["path"], "float",
-                uv, texture_mode, "Raw", uv_transform, profile,
+                uv, texture_mode, "Raw", uv_transform, profile, instance_primvar,
             )
             compare = builder.createNode("mtlxcompare", "thin_walled_threshold")
             compare.parm("test").set(3)  # greater than
@@ -838,7 +1002,7 @@ def build_materials(
         if "normal" in maps:
             normal = _normal_texture(
                 builder, "normal", maps["normal"]["path"], uv,
-                texture_mode, uv_transform, profile,
+                texture_mode, uv_transform, profile, instance_primvar,
             )
             normal.setPosition(hou.Vector2(-1.5, -3.0))
             _connect(surface, "geometry_normal" if surface_model == "openpbr" else "normal", normal)
@@ -846,14 +1010,14 @@ def build_materials(
         if "coat_normal" in maps:
             normal = _normal_texture(
                 builder, "coat_normal", maps["coat_normal"]["path"], uv,
-                texture_mode, uv_transform, profile,
+                texture_mode, uv_transform, profile, instance_primvar,
             )
             _connect(surface, "geometry_coat_normal" if surface_model == "openpbr" else "coat_normal", normal)
         bump_channel, displacement_channel = geometry_detail_plan(maps, detail_mode)
         if bump_channel:
             height = _image(
                 builder, bump_channel, maps[bump_channel]["path"], "float",
-                uv, texture_mode, "Raw", uv_transform, profile,
+                uv, texture_mode, "Raw", uv_transform, profile, instance_primvar,
             )
             bump = builder.createNode("mtlxbump", bump_channel + "_bump")
             bump.parm("scale").set(bump_scale)
@@ -868,7 +1032,7 @@ def build_materials(
             displacement_image = _image(
                 builder, displacement_channel, maps[displacement_channel]["path"],
                 "vector3" if vector else "float",
-                uv, texture_mode, "Raw", uv_transform, profile,
+                uv, texture_mode, "Raw", uv_transform, profile, instance_primvar,
             )
             centered_height = builder.createNode("mtlxsubtract", "height_zero_level")
             centered_height.parm("signature").set("vector3" if vector else "float")

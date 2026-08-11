@@ -495,6 +495,14 @@ def run(node: hou.Node) -> None:
                 manifest = manifest_source_images(source, ocio, bool(node.evalParm("inspect_images")))
             _update_conversion_summary(node, manifest, workflow)
             library = _solaris_nodes(node)
+            offset_per_instance = bool(_parm(node, "offset_per_instance", 0))
+            instance_offset_primvar = str(
+                _parm(node, "instance_offset_primvar", "atb_instance_offset")
+            ).strip()
+            if offset_per_instance and not instance_offset_primvar:
+                raise RuntimeError(
+                    "Instance Offset Primvar cannot be empty when per-instance offset is enabled"
+                )
             material_paths = build_materials(
                 library,
                 manifest,
@@ -506,6 +514,9 @@ def run(node: hou.Node) -> None:
                 float(node.evalParm("height_zero")),
                 _menu(node, "geometry_detail_mode"),
                 float(node.evalParm("bump_scale")),
+                offset_per_instance,
+                instance_offset_primvar,
+                float(_parm(node, "instance_offset_scale", 1.0)),
             )
             matches, assignment_status = _assignment_status(
                 node, library, material_paths, manifest,

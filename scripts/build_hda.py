@@ -167,6 +167,40 @@ def build() -> Path:
         ),
         default_value=0,
     ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode shares one MtlX USD Transform 2D. Hex Pattern Breakup reduces repetition in UV-mapped materials. Triplanar projects in object space without requiring UVs. Breakup modes create one visible texture_controls node that drives all compatible lookups. USD MaterialX profiles use only standard MaterialX nodes; no Karma shader compound is inserted."))
+    per_instance = hou.ToggleParmTemplate(
+        "offset_per_instance", "Offset Texture Per Instance", False,
+    )
+    per_instance.setConditional(
+        hou.parmCondType.DisableWhen, "{ texture_mode == auto }",
+    )
+    textures.addParmTemplate(explained(
+        per_instance,
+        "Offsets each instance from a vector3 USD primvar. Repeating and Hex modes use XY; Triplanar modes use XYZ. A missing primvar resolves to zero and leaves the material unchanged.",
+    ))
+    offset_primvar = hou.StringParmTemplate(
+        "instance_offset_primvar", "Instance Offset Primvar", 1,
+        ("atb_instance_offset",),
+    )
+    offset_primvar.setConditional(
+        hou.parmCondType.DisableWhen,
+        "{ offset_per_instance == 0 } { texture_mode == auto }",
+    )
+    textures.addParmTemplate(explained(
+        offset_primvar,
+        "Name of a vector3 USD primvar authored on each instance or inherited by it. Use stable values for stable texture placement; the default value expected by this tool is atb_instance_offset.",
+    ))
+    offset_scale = hou.FloatParmTemplate(
+        "instance_offset_scale", "Instance Offset Scale", 1, (1.0,),
+        min=0.0, max=100.0,
+    )
+    offset_scale.setConditional(
+        hou.parmCondType.DisableWhen,
+        "{ offset_per_instance == 0 } { texture_mode == auto }",
+    )
+    textures.addParmTemplate(explained(
+        offset_scale,
+        "Global multiplier for the per-instance offset. The generated texture_controls node exposes the same shared value for all supported material builders.",
+    ))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "geometry_detail_mode", "Height / Displacement Mode",
         ("auto", "bump", "displacement", "off"),
@@ -341,6 +375,10 @@ textures in object space without UVs; the breakup variant uses one shared,
 renderer-neutral MaterialX position graph and a visible texture-controls node.
 Hex Pattern Breakup adds MaterialX 1.39 hex image and normal-map lookups to
 reduce obvious UV repetition.
+
+Offset Texture Per Instance reads a vector3 USD primvar (by default
+atb_instance_offset). Repeating and Hex modes use XY; Triplanar modes use XYZ.
+Missing values are zero and do not change the material.
 
 Leave Houdini OCIO enabled unless the project requires another config. Color
 maps are converted to scene-linear; data maps and completed TX files stay Raw.

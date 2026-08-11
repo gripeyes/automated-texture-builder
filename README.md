@@ -147,6 +147,16 @@ UV-based MaterialX images receive an explicit UV connection. Triplanar modes
 use object-space position and the projection node's standard `Nobject` default,
 so they do not depend on `st`.
 
+Enable **Offset Texture Per Instance** when repeated assets should not show the
+same texture placement. Author a stable `vector3` USD primvar named
+`atb_instance_offset` on each instance (or change **Instance Offset Primvar** to
+your pipeline's name). Repeating and Hex modes add its XY components after the
+shared USD Transform 2D; Triplanar modes add XYZ to object-space projection
+coordinates. Missing primvars default to `(0, 0, 0)`, so non-instanced geometry
+keeps its existing look. The generated `texture_controls` node exposes one
+shared offset multiplier for all supported material builders. Keep the primvar
+stable across frames to avoid texture swimming.
+
 ## Color management
 
 Artists should normally leave **Use Current Houdini OCIO** enabled.
