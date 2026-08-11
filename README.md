@@ -346,13 +346,19 @@ Run the installer whenever the tool is moved or Houdini is upgraded:
 python3 /Users/j7s/coding/automated-texture-builder/scripts/install.py
 ```
 
-It installs the Houdini 22 package and the Substance Painter export preset for
-the current user. Restart Houdini and Painter so they rescan the assets.
+By default it installs packages for Houdini 20.5 and 22.0, plus the Substance
+Painter export preset, for the current user. Restart Houdini and Painter so
+they rescan the assets. To install only selected versions, repeat the option:
+
+```sh
+python3 /Users/j7s/coding/automated-texture-builder/scripts/install.py \
+  --houdini-version 20.5 --houdini-version 22.0
+```
 
 The Houdini package is installed at:
 
 ```text
-~/Library/Preferences/houdini/22.0/packages/automated_texture_builder.json
+~/Library/Preferences/houdini/<version>/packages/automated_texture_builder.json
 ```
 
 ## Command-line use
