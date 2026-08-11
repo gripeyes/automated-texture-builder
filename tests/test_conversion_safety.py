@@ -7,11 +7,15 @@ from automated_texture_builder.conversion import (
     COLOR_CHANNELS,
     delete_original_sources,
     delete_sources_for_existing_tx,
+    display_space_name,
     maketx_output_type,
     maketx_storage_args,
     resolve_existing_tx_root,
+    shader_lookup_space,
     should_skip_web_color_linearization,
+    tx_pixel_space,
 )
+from automated_texture_builder.model import TextureFile
 
 
 class ConversionSafetyTests(unittest.TestCase):
@@ -97,6 +101,68 @@ class ConversionSafetyTests(unittest.TestCase):
             ),
             ["--format", "tiff", "-d", "uint8"],
         )
+
+    def test_bypassed_color_defers_its_detected_source_space_to_the_shader(self):
+        texture = TextureFile(
+            Path("downloaded_BaseColor.jpg"), "downloaded", "base_color", None,
+            source_space="sRGB Encoded Rec.709 (sRGB)",
+            skip_linearization=True,
+            status="converted",
+        )
+        self.assertEqual(
+            tx_pixel_space(
+                texture.channel, texture.source_space, "ACEScg",
+                texture.skip_linearization,
+            ),
+            "sRGB Encoded Rec.709 (sRGB)",
+        )
+        self.assertEqual(
+            shader_lookup_space(texture),
+            "sRGB Encoded Rec.709 (sRGB)",
+        )
+
+    def test_srgb_lookup_spelling_follows_the_config_family(self):
+        class Space:
+            def getAliases(self):
+                return ["sRGB Encoded Rec.709 (sRGB)", "srgb_texture"]
+
+            def getName(self):
+                return "sRGB - Texture"
+
+        class Config:
+            def __init__(self, scene_linear):
+                self.scene_linear = scene_linear
+
+            def getColorSpace(self, _name):
+                return Space()
+
+            def getRoleColorSpace(self, _role):
+                return self.scene_linear
+
+        self.assertEqual(
+            display_space_name(Config("Linear Rec.2020"), "sRGB - Texture"),
+            "sRGB - Texture",
+        )
+        self.assertEqual(
+            display_space_name(Config("ACEScg"), "sRGB - Texture"),
+            "sRGB Encoded Rec.709 (sRGB)",
+        )
+
+    def test_baked_color_is_scene_linear_and_read_raw(self):
+        texture = TextureFile(
+            Path("paint_BaseColor.png"), "paint", "base_color", None,
+            source_space="sRGB - Texture",
+            skip_linearization=False,
+            status="converted",
+        )
+        self.assertEqual(
+            tx_pixel_space(
+                texture.channel, texture.source_space, "Linear Rec.2020",
+                texture.skip_linearization,
+            ),
+            "Linear Rec.2020",
+        )
+        self.assertEqual(shader_lookup_space(texture), "Raw")
 
     def test_raw_maps_preserve_integer_storage(self):
         self.assertEqual(

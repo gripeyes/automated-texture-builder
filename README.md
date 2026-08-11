@@ -175,19 +175,19 @@ bundled configs recognize tags such as `_ACEScg_`, `_lin_rec709_`, `_Raw_`, and
 `_sRGB_`.
 
 **Skip PNG/JPEG Color Linearization** is an advanced escape hatch and is off by
-default. Enabling it preserves PNG/JPEG color-map pixel values only when OCIO
-classified them as display-referred, and stores their TX files as Raw without
-an OCIO transform. An explicit filename/path rule identifying a linear or log
-source still wins, so any required gamut or transfer conversion is preserved.
-The option never affects roughness, metalness, normals, height, or other data
-maps. Use it only when the pixels are already scene-linear in the project
-working space but the files cannot be renamed or classified correctly. A
-correct OCIO name/path rule remains preferable.
+default. Enabling it preserves PNG/JPEG color-map pixel values when OCIO
+classifies them as display-referred, then sets generated image nodes to the
+detected source space. That is normally `sRGB - Texture` in the Houdini config
+or `sRGB Encoded Rec.709 (sRGB)` in the matching ACES config. Linearization is
+therefore deferred to shader lookup instead of baked by maketx; it still occurs
+exactly once. An explicit filename/path rule identifying a linear or log source
+still wins. The option never affects roughness, metalness, normals, height, or
+other data maps.
 
 Generated TX filenames deliberately continue to mirror their source filenames,
 which keeps UDIM grouping, incremental updates, source deletion checks, and
 existing-TX discovery deterministic. Each TX is instead tagged internally with
-its detected source color space, baked color space, Raw lookup space, channel,
+its detected source color space, baked color space, shader lookup space, channel,
 and storage type. The JSON manifest records the same source/output information.
 The OCIO `.tx` rule must remain first and Raw so these baked pixels are never
 transformed a second time, regardless of tags in the original filename.

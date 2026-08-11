@@ -75,6 +75,24 @@ def classify(config, path: Path) -> str:
     return str(value)
 
 
+def display_space_name(config, value: str) -> str:
+    """Use the active config family's preferred spelling for a colorspace."""
+    color_space = config.getColorSpace(value)
+    if color_space is None:
+        return value
+    if scene_linear_space(config).casefold() == "acescg":
+        preferred = next(
+            (
+                str(alias) for alias in color_space.getAliases()
+                if str(alias).startswith("sRGB Encoded")
+            ),
+            None,
+        )
+        if preferred:
+            return preferred
+    return str(color_space.getName())
+
+
 def inspect(path: Path, oiiotool: str | None) -> dict[str, str]:
     if not oiiotool:
         return {"available": "false"}
@@ -117,6 +135,24 @@ def image_pixel_type(path: Path, oiiotool: str | None = None) -> str:
 
 GEOMETRY_DETAIL_CHANNELS = {"height", "displacement", "vector_displacement"}
 WEB_COLOR_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+
+
+def tx_pixel_space(
+    channel: str, source_space: str, scene_linear: str, skip_linearization: bool,
+) -> str:
+    """Describe the pixels written to TX, independently of its .tx file rule."""
+    if channel not in COLOR_CHANNELS:
+        return "Raw"
+    return source_space if skip_linearization else scene_linear
+
+
+def shader_lookup_space(texture: TextureFile) -> str:
+    """Return the one color-space transform still required at shader lookup."""
+    if texture.channel in COLOR_CHANNELS and (
+        texture.status == "source_direct" or texture.skip_linearization
+    ):
+        return texture.source_space
+    return "Raw"
 
 
 def should_skip_web_color_linearization(
@@ -222,13 +258,18 @@ def convert(
     for texture_set in sets.values():
         for channel, textures in texture_set.maps.items():
             for texture in textures:
-                texture.source_space = classify(config, texture.source)
+                texture.source_space = display_space_name(
+                    config, classify(config, texture.source),
+                )
                 texture.skip_linearization = should_skip_web_color_linearization(
                     channel, texture.source, skip_png_jpeg_linearization,
                     config, texture.source_space,
                 )
                 transform_color = channel in COLOR_CHANNELS and not texture.skip_linearization
-                texture.output_space = output_space if transform_color else "Raw"
+                texture.output_space = tx_pixel_space(
+                    channel, texture.source_space, output_space,
+                    texture.skip_linearization,
+                )
                 texture.source_pixel_type = image_pixel_type(texture.source, oiiotool)
                 texture.output_pixel_type = maketx_output_type(
                     channel, texture.source_pixel_type, transform_color,
@@ -274,7 +315,8 @@ def convert(
                         texture.source_space,
                         "--sattrib", "automated_texture_builder:baked_color_space",
                         texture.output_space,
-                        "--sattrib", "automated_texture_builder:lookup_color_space", "Raw",
+                        "--sattrib", "automated_texture_builder:lookup_color_space",
+                        texture.source_space if texture.skip_linearization else "Raw",
                         "--sattrib", "automated_texture_builder:source_pixel_type",
                         texture.source_pixel_type or "unknown",
                         "--sattrib", "automated_texture_builder:output_pixel_type",
@@ -433,7 +475,9 @@ def manifest_source_images(
     sets = scan(source_root, manifest_root)
     for texture in _iter_textures(sets):
         texture.output = texture.source
-        texture.source_space = classify(config, texture.source)
+        texture.source_space = display_space_name(
+            config, classify(config, texture.source),
+        )
         texture.output_space = texture.source_space if texture.channel in COLOR_CHANNELS else "Raw"
         texture.status = "source_direct"
         if inspect_images:
@@ -473,11 +517,7 @@ def write_manifest(
                 "udim": any(texture.udim is not None for texture in textures),
                 "tiles": sorted({texture.udim for texture in textures if texture.udim is not None}),
                 "color_space": textures[0].output_space,
-                "lookup_space": (
-                    textures[0].source_space
-                    if textures[0].status == "source_direct" and channel in COLOR_CHANNELS
-                    else "Raw"
-                ),
+                "lookup_space": shader_lookup_space(textures[0]),
             }
         payload["texture_sets"].append({"name": name, "maps": maps})
     path = output_root / "automated_texture_manifest.json"

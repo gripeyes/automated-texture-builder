@@ -10,7 +10,7 @@ from pxr import UsdGeom
 
 from automated_texture_builder.conversion import (
     COLOR_CHANNELS, classify, convert, delete_original_sources,
-    delete_sources_for_existing_tx, load_ocio, manifest_existing_tx,
+    delete_sources_for_existing_tx, display_space_name, load_ocio, manifest_existing_tx,
     manifest_source_images, resolve_existing_tx_root, resolve_ocio,
     scene_linear_space,
 )
@@ -54,19 +54,6 @@ def _set_if_present(node: hou.Node, name: str, value: str) -> None:
         parm.set(value)
 
 
-def _display_space_name(config, value: str) -> str:
-    """Display the config-family spelling while classification remains rule-driven."""
-    colorspace = config.getColorSpace(value)
-    if colorspace is None:
-        return value
-    if scene_linear_space(config).casefold() == "acescg":
-        aliases = list(colorspace.getAliases())
-        preferred = next((alias for alias in aliases if alias.startswith("sRGB Encoded")), None)
-        if preferred:
-            return preferred
-    return colorspace.getName()
-
-
 def _tx_rule_status(config) -> str:
     tx_space = classify(config, Path("/tmp/AutomatedTextureBuilder_ColorTexture.tx"))
     if tx_space.casefold() == "raw":
@@ -105,7 +92,7 @@ def refresh_color_rules(node: hou.Node) -> None:
         _set_if_present(node, "rule_data", "Raw → Raw — no OCIO transform")
         target = "No TX conversion" if workflow == "source_direct" else "OCIO scene-linear"
         if workflow == "generate_tx" and skip_web_linearization:
-            target += "; PNG/JPEG color override → Raw"
+            target += "; PNG/JPEG color pixels preserved → detected sRGB source space"
         _set_if_present(node, "rule_target", target)
         _set_if_present(
             node, "rule_tx",
@@ -128,7 +115,7 @@ def refresh_color_rules(node: hou.Node) -> None:
         ]
         for field, extensions in groups.items():
             spaces = sorted({
-                _display_space_name(config, classify(config, texture.source))
+                display_space_name(config, classify(config, texture.source))
                 for texture in textures
                 if texture.channel in COLOR_CHANNELS and texture.source.suffix.lower() in extensions
             })
@@ -136,7 +123,7 @@ def refresh_color_rules(node: hou.Node) -> None:
                 text = f"Read as {', '.join(spaces)} (detected source maps)"
             else:
                 fallback_spaces = sorted({
-                    _display_space_name(
+                    display_space_name(
                         config,
                         classify(config, Path("/tmp") / f"AutomatedTextureBuilder_BaseColor{extension}"),
                     )
@@ -151,7 +138,10 @@ def refresh_color_rules(node: hou.Node) -> None:
                 and workflow == "generate_tx"
                 and skip_web_linearization
             ):
-                text += " — advanced bypass enabled; PNG/JPEG color pixels remain unconverted"
+                text += (
+                    " — shader lookup uses this detected source space; "
+                    "TX pixels remain unconverted"
+                )
             _set_if_present(node, field, text)
         data_count = sum(texture.channel not in COLOR_CHANNELS for texture in textures)
         _set_if_present(
@@ -165,7 +155,10 @@ def refresh_color_rules(node: hou.Node) -> None:
         else:
             target = f"Color TX pixels → {destination}"
             if skip_web_linearization:
-                target += "; PNG/JPEG color override → Raw (no OCIO conversion)"
+                target += (
+                    "; PNG/JPEG color pixels preserved → detected sRGB source space "
+                    "at shader lookup"
+                )
             _set_if_present(node, "rule_target", target)
             _set_if_present(node, "rule_tx", tx_rule_status)
     except Exception as exc:
@@ -211,8 +204,8 @@ def _update_conversion_summary(node: hou.Node, manifest: Path, workflow: str) ->
             color_summary = f"{converted_color_count} color → {scene_linear}"
             if skipped_color_count:
                 color_summary += (
-                    f"; {skipped_color_count} PNG/JPEG color preserved as Raw "
-                    "(linearization bypassed)"
+                    f"; {skipped_color_count} PNG/JPEG color preserved encoded "
+                    "(linearized once at shader lookup)"
                 )
             summary = f"Success: {len(textures)} files — {color_summary}; {data_count} data → Raw."
     elif workflow == "existing_tx":

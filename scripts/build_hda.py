@@ -313,7 +313,7 @@ def build() -> Path:
     )
     color.addParmTemplate(explained(
         skip_web,
-        "Advanced exception for PNG/JPEG color maps whose pixels are already scene-linear despite being classified as display-referred. Matching display-referred maps bypass OCIO conversion and are stored in TX as Raw. Explicit OCIO filename/path rules that identify linear or log inputs remain authoritative. Leave this off for downloaded textures and normal Substance color exports, which are usually sRGB-encoded.",
+        "Defers PNG/JPEG color linearization from maketx to the shader lookup. Matching display-referred pixels remain encoded in TX, and generated image nodes use the source space detected from the active OCIO config (for example sRGB - Texture or sRGB Encoded Rec.709 (sRGB)). Explicit filename/path rules identifying linear or log inputs remain authoritative. Leave this off to bake color TX files into scene-linear.",
     ))
     color.addParmTemplate(hou.SeparatorParmTemplate("sep_file_rules"))
     color.addParmTemplate(hou.LabelParmTemplate(
