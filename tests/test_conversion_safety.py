@@ -10,6 +10,7 @@ from automated_texture_builder.conversion import (
     display_space_name,
     maketx_output_type,
     maketx_storage_args,
+    houdini_oiio_tool,
     resolve_existing_tx_root,
     shader_lookup_space,
     should_skip_web_color_linearization,
@@ -19,6 +20,21 @@ from automated_texture_builder.model import TextureFile
 
 
 class ConversionSafetyTests(unittest.TestCase):
+    def test_houdini_oiio_tool_prefers_hfs_bin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "bin" / "maketx"
+            executable.parent.mkdir()
+            executable.touch(mode=0o755)
+            previous = __import__("os").environ.get("HFS")
+            __import__("os").environ["HFS"] = directory
+            try:
+                self.assertEqual(houdini_oiio_tool("maketx"), str(executable))
+            finally:
+                if previous is None:
+                    __import__("os").environ.pop("HFS", None)
+                else:
+                    __import__("os").environ["HFS"] = previous
+
     def test_openpbr_color_and_data_channels_are_distinct(self):
         self.assertIn("translucency_color", COLOR_CHANNELS)
         self.assertIn("emission_color", COLOR_CHANNELS)

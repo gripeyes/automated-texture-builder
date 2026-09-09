@@ -1,19 +1,19 @@
-# Automated Texture Builder for Houdini 22
+# Labs Automated Texture Builder for Houdini 22
 
-Automated Texture Builder turns a folder of textures into ready-to-use material
-subnetworks in Solaris.
+Labs Automated Texture Builder turns a folder of textures into ready-to-use
+portable USD MaterialX subnetworks in Solaris.
 
 It finds the textures that belong together, optionally creates render-ready
 `.tx` files, creates one material subnetwork per texture set, and connects every
-recognized map to the appropriate shader input. It supports USD MaterialX,
-Karma, Arnold and MoonRay materials.
+recognized map to the appropriate OpenPBR Surface or MaterialX Standard Surface
+shader input. It uses Houdini's bundled MaterialX, OCIO, maketx, and OIIO tools.
 
 ## Quick start
 
 1. In Houdini, go to `/stage`.
 2. Press Tab and create **Automated Texture Builder**.
 3. Choose a **Texture Workflow** and select the **Texture Folder**.
-4. Choose the material builder and surface model you want.
+4. Choose the surface model you want.
 5. Choose the UV, tiled, or triplanar texture mode you need.
 6. Click **Convert, Build and Assign**.
 
@@ -73,14 +73,6 @@ subfolder.
 
 ## Material choices
 
-### Material builder
-
-- **USD MaterialX Builder** — portable USD MaterialX material
-- **Karma Material Builder** — Karma-focused MaterialX material
-- **USD MaterialX Builder (Arnold)** — Arnold USD MaterialX material
-- **Arnold Material Builder** — native Arnold Standard Surface network
-- **MoonRay DwaBase** — native MoonRay material network
-
 ### Surface model
 
 - **OpenPBR Surface** — recommended for Painter 12.1 OpenPBR projects and the
@@ -89,8 +81,8 @@ subfolder.
   pipelines
 
 OpenPBR MaterialX is the most faithful destination for the complete OpenPBR
-parameter set. Arnold Standard Surface and MoonRay DwaBase receive the closest
-supported equivalents where their native shader models differ.
+parameter set. MaterialX Standard Surface is available for established Standard
+Surface pipelines.
 
 ## Texture naming and multiple materials
 

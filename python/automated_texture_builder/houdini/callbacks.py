@@ -499,7 +499,6 @@ def run(node: hou.Node) -> None:
             material_paths = build_materials(
                 library,
                 manifest,
-                _menu(node, "builder_profile"),
                 _menu(node, "surface_model"),
                 _menu(node, "texture_mode"),
                 "st",

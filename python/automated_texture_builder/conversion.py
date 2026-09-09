@@ -22,6 +22,16 @@ COLOR_CHANNELS = {
 }
 
 
+def houdini_oiio_tool(name: str) -> str | None:
+    """Prefer the OIIO executable shipped with the running Houdini install."""
+    hfs = os.environ.get("HFS", "").strip()
+    if hfs:
+        candidate = Path(hfs) / "bin" / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return shutil.which(name)
+
+
 def resolve_ocio(explicit: str | Path | None = None) -> Path:
     value = str(explicit) if explicit else os.environ.get("OCIO", "")
     if not value:
@@ -113,7 +123,7 @@ def _output_path(texture: TextureFile, source_root: Path, output_root: Path) -> 
 
 def image_pixel_type(path: Path, oiiotool: str | None = None) -> str:
     """Read the actual source pixel type through OIIO, independent of extension."""
-    executable = oiiotool or shutil.which("oiiotool")
+    executable = oiiotool or houdini_oiio_tool("oiiotool")
     if not executable:
         return ""
     result = subprocess.run(
@@ -239,10 +249,10 @@ def convert(
     ocio_path = resolve_ocio(ocio_path)
     config = load_ocio(ocio_path)
     output_space = output_space or scene_linear_space(config)
-    maketx = shutil.which("maketx")
-    oiiotool = shutil.which("oiiotool")
+    maketx = houdini_oiio_tool("maketx")
+    oiiotool = houdini_oiio_tool("oiiotool")
     if not maketx:
-        raise RuntimeError("maketx was not found on PATH")
+        raise RuntimeError("Houdini's maketx was not found in $HFS/bin or PATH")
     sets = scan(source_root, output_root)
     previous: dict[str, dict] = {}
     previous_manifest = output_root / "automated_texture_manifest.json"
@@ -360,7 +370,7 @@ def manifest_existing_tx(
     ocio_path = resolve_ocio(ocio_path)
     config = load_ocio(ocio_path)
     output_space = scene_linear_space(config)
-    oiiotool = shutil.which("oiiotool")
+    oiiotool = houdini_oiio_tool("oiiotool")
     sets = scan(tx_root, extensions={".tx"})
     for texture in _iter_textures(sets):
         texture.output = texture.source
@@ -470,7 +480,7 @@ def manifest_source_images(
     ocio_path = resolve_ocio(ocio_path)
     config = load_ocio(ocio_path)
     output_space = scene_linear_space(config)
-    oiiotool = shutil.which("oiiotool")
+    oiiotool = houdini_oiio_tool("oiiotool")
     manifest_root = source_root / ".automated_texture_builder"
     sets = scan(source_root, manifest_root)
     for texture in _iter_textures(sets):

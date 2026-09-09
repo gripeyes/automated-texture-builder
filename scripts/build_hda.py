@@ -10,7 +10,7 @@ import hou
 
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "otls" / "automated_texture_builder.hda"
-TYPE_NAME = "j7s::automated_texture_builder::1.0"
+TYPE_NAME = "labs::automated_texture_builder::1.0"
 
 
 def callback_code(call: str) -> str:
@@ -131,29 +131,15 @@ def build() -> Path:
         "Result of the latest run, calculated from the generated manifest. This reports color and data texture counts and whether the operation completed successfully.",
     ))
     textures.addParmTemplate(hou.SeparatorParmTemplate("sep_material"))
-    textures.addParmTemplate(explained(hou.MenuParmTemplate(
-        "builder_profile", "Solaris Material Builder",
-        ("generic", "karma", "arnold", "arnold_native", "moonray"),
-        (
-            "USD MaterialX Builder", "Karma Material Builder",
-            "USD MaterialX Builder (Arnold)", "Arnold Material Builder",
-            "MoonRay DwaBase Material Builder",
-        ),
-        default_value=0,
-    ), "Chooses the actual Houdini material subnet created inside the external Solaris Material Library. Native Arnold creates Arnold Standard Surface; MoonRay creates the verified DwaBase topology."))
     surface_model = hou.MenuParmTemplate(
         "surface_model", "Surface Model",
         ("openpbr", "standard_surface"),
         ("OpenPBR Surface", "MaterialX Standard Surface"),
         default_value=0,
     )
-    surface_model.setConditional(
-        hou.parmCondType.DisableWhen,
-        "{ builder_profile == arnold_native } { builder_profile == moonray }",
-    )
     textures.addParmTemplate(explained(
         surface_model,
-        "Applies to the three MaterialX builder profiles. Native Arnold uses Arnold Standard Surface; MoonRay uses DwaBaseMaterial.",
+        "Choose either OpenPBR Surface or MaterialX Standard Surface for every generated material.",
     ))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "texture_mode", "Texture Mode",
@@ -166,7 +152,7 @@ def build() -> Path:
             "Triplanar with Pattern Breakup",
         ),
         default_value=0,
-    ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode uses the selected renderer's native UV controls. Hex Pattern Breakup reduces repetition in UV-mapped MaterialX materials; MoonRay creates its native randomized triplanar variation. Triplanar projects in object space without requiring UVs. Breakup modes create one visible texture_controls node that drives all compatible lookups. USD MaterialX profiles use only standard MaterialX nodes; MoonRay materials contain only MoonRay shader nodes."))
+    ), "Automatic / UDIM uses UVs and replaces 1001-style tiles with <UDIM>. Repeating mode uses a shared USD Transform 2D. Hex Pattern Breakup reduces repetition in UV-mapped MaterialX materials. Triplanar projects in object space without requiring UVs. Breakup modes create one visible texture_controls node that drives all compatible lookups. Every generated shading node is standard MaterialX."))
     per_instance = hou.ToggleParmTemplate(
         "offset_per_instance", "Offset Texture Per Instance", False,
     )
