@@ -69,6 +69,27 @@ class DiscoveryTests(unittest.TestCase):
             result = scan(root, root / "tx")
             self.assertEqual(set(result), {"Extract12", "Wall"})
 
+    def test_explicit_opengl_normal_wins_over_generic_normal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "asset_Normal_OpenGL_Raw_1001.png").touch()
+            (root / "asset_Normal_Raw_1001.png").touch()
+            result = scan(root)
+            self.assertEqual(
+                [texture.source.name for texture in result["asset"].maps["normal"]],
+                ["asset_Normal_OpenGL_Raw_1001.png"],
+            )
+
+    def test_ambiguous_duplicate_channel_udim_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "asset_Normal_Raw_1001.png").touch()
+            (root / "asset_Nrm_Raw_1001.png").touch()
+            with self.assertRaisesRegex(
+                ValueError, "multiple files for channel 'normal'.*UDIM 1001"
+            ):
+                scan(root)
+
     def test_extended_material_channels(self):
         cases = {
             "hero_TransmissionColor_Linear Rec.2020.1001.exr": "transmission_color",

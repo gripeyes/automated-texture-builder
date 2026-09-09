@@ -178,6 +178,16 @@ def _canonical(value: str) -> str:
     return ALIASES[value.lower().replace(" ", "_")]
 
 
+def _is_explicit_opengl_normal(texture: TextureFile) -> bool:
+    matches = list(CHANNEL_RE.finditer(texture.source.stem))
+    if not matches:
+        return False
+    token = matches[-1].group("channel").lower().replace(" ", "_")
+    return texture.channel == "normal" and (
+        "opengl" in token or token.endswith("_gl")
+    )
+
+
 def parse_texture(path: Path) -> TextureFile | None:
     matches = list(CHANNEL_RE.finditer(path.stem))
     if not matches:
@@ -212,8 +222,45 @@ def scan(
     if not sets:
         raise ValueError(f"No recognized material textures found under {root}")
     for item in sets.values():
-        for textures in item.maps.values():
+        for channel, textures in item.maps.items():
             textures.sort(key=lambda t: (t.udim or 0, t.source.name.casefold()))
+            by_tile: dict[int | None, list[TextureFile]] = {}
+            for texture in textures:
+                by_tile.setdefault(texture.udim, []).append(texture)
+            selected = []
+            for files in by_tile.values():
+                explicit_opengl = [
+                    texture for texture in files
+                    if _is_explicit_opengl_normal(texture)
+                ]
+                if channel == "normal" and len(explicit_opengl) == 1:
+                    selected.append(explicit_opengl[0])
+                else:
+                    selected.extend(files)
+            item.maps[channel] = selected
+            duplicates = {
+                tile: files for tile, files in by_tile.items()
+                if len(files) > 1
+                and not (
+                    channel == "normal"
+                    and len([
+                        texture for texture in files
+                        if _is_explicit_opengl_normal(texture)
+                    ]) == 1
+                )
+            }
+            if duplicates:
+                details = []
+                for tile, files in duplicates.items():
+                    label = f"UDIM {tile}" if tile is not None else "untiled map"
+                    details.append(
+                        f"{label}: " + ", ".join(file.source.name for file in files)
+                    )
+                raise ValueError(
+                    f"Texture set {item.name!r} has multiple files for channel "
+                    f"{channel!r} ({'; '.join(details)}). Remove the duplicate or "
+                    "rename it to a different recognized channel."
+                )
     return sets
 
 

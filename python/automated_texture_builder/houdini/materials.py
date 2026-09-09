@@ -1159,7 +1159,9 @@ def assignment_candidates(stage, geometry_root: str) -> list[tuple[str, bool]]:
 
 def auto_assign(library: hou.Node, stage, material_paths: dict[str, str], geometry_root: str) -> dict[str, str]:
     candidates = assignment_candidates(stage, geometry_root)
-    matches = match_materials_to_paths(material_paths, candidates)
+    matches = match_materials_to_paths(
+        material_paths, candidates, allow_single_fallback=True,
+    )
     # Material Library uses the same sorted order authored by _publish_library.
     # Bind directly in each material entry instead of creating another LOP.
     for index, set_name in enumerate(sorted(material_paths), 1):

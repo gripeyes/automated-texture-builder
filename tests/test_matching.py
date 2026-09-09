@@ -62,6 +62,65 @@ class MatchingTests(unittest.TestCase):
         candidates = ["/asset/helmet_left", "/asset/helmet_right"]
         self.assertEqual(match_materials_to_paths(materials, candidates), {})
 
+    def test_asset_name_in_ancestor_matches_generic_mesh_and_subset(self):
+        materials = {
+            "abstract-femsculpt-lp4_DefaultMaterial":
+            "/materials/abstract_femsculpt_lp4_DefaultMaterial",
+            "DefaultMaterial": "/materials/DefaultMaterial",
+        }
+        candidates = [
+            ("/abstract_femsculpt_lp2/mesh_0", False),
+            (
+                "/abstract_femsculpt_lp2/mesh_0/"
+                "shop_materialpath_texture_material",
+                True,
+            ),
+        ]
+        self.assertEqual(
+            match_materials_to_paths(materials, candidates),
+            {
+                "abstract-femsculpt-lp4_DefaultMaterial":
+                "/abstract_femsculpt_lp2/mesh_0/"
+                "shop_materialpath_texture_material",
+            },
+        )
+
+    def test_single_material_falls_back_to_single_mesh(self):
+        materials = {"DefaultMaterial": "/materials/DefaultMaterial"}
+        candidates = [("/asset/mesh_0", False)]
+        self.assertEqual(
+            match_materials_to_paths(
+                materials, candidates, allow_single_fallback=True,
+            ),
+            {"DefaultMaterial": "/asset/mesh_0"},
+        )
+
+    def test_single_material_prefers_only_subset_of_only_mesh(self):
+        materials = {"DefaultMaterial": "/materials/DefaultMaterial"}
+        candidates = [
+            ("/asset/mesh_0", False),
+            ("/asset/mesh_0/shop_materialpath_texture_material", True),
+        ]
+        self.assertEqual(
+            match_materials_to_paths(
+                materials, candidates, allow_single_fallback=True,
+            ),
+            {
+                "DefaultMaterial":
+                "/asset/mesh_0/shop_materialpath_texture_material"
+            },
+        )
+
+    def test_single_material_does_not_fall_back_across_multiple_meshes(self):
+        materials = {"DefaultMaterial": "/materials/DefaultMaterial"}
+        candidates = [("/asset/mesh_0", False), ("/asset/mesh_1", False)]
+        self.assertEqual(
+            match_materials_to_paths(
+                materials, candidates, allow_single_fallback=True,
+            ),
+            {},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
