@@ -108,49 +108,13 @@ The bundled Substance Painter preset produces compatible names automatically.
 
 ## UV and tiling modes
 
-- **Automatic / UDIM** uses ordinary MaterialX Image nodes and replaces
-  detected tile numbers with `<UDIM>`.
-- **Repeating Tiled Image** uses a shared MtlX USD Transform 2D node for scale,
-  rotation and translation, then feeds regular MaterialX Image nodes with
-  periodic wrapping.
-- **Tiled Texture with Hex Pattern Breakup** uses the shared USD Transform 2D
-  plus MaterialX 1.39 Hex Tiled Image nodes. Normal textures use the dedicated
-  Hex Tiled Normal Map node, while scalar maps take the red channel from the
-  same randomized lookup. A single visible `texture_controls` node drives the
-  tiling, rotation, scale, offset, falloff and contrast of every lookup in the
-  material. MaterialX profiles use the standard MaterialX 1.39 implementation.
-  MoonRay uses its native randomized triplanar projection as the renderer's
-  pattern-breakup variation, with shared scale, blend, seed, rotation, flip and
-  offset controls. Native Arnold does not expose an equivalent hex lookup and
-  rejects this combination.
-- **Triplanar Projection** projects textures in object space without requiring
-  usable mesh UVs. Generic, Karma and Arnold USD profiles all use the same
-  standard MtlX Triplanar Projection graph.
-- **Triplanar with Pattern Breakup** adds a shared standard-MaterialX position
-  variation before those projections to hide obvious repetition. The visible
-  `texture_controls` node drives projection scale, blend, breakup frequency and
-  breakup amount for every map together. The graph contains no Karma-specific
-  shader nodes. Normal textures request the triplanar node's `vector3` signature
-  directly, with no MtlX Convert, before the standard MtlX Normal Map decoding;
-  the projection's normal input remains at its portable `Nobject` default.
-  Generic MaterialX, Karma, Arnold USD MaterialX and native Arnold are
-  supported. MoonRay uses its native Project Triplanar Map nodes, including the
-  dedicated normal-map variant. Its breakup mode uses MoonRay's built-in random
-  rotation, flip and offset controls.
+- **Automatic / UDIM** uses MaterialX Image nodes and detects `1001`-style tiles.
+- **Repeating Texture** uses a shared USD Transform 2D and periodic wrapping.
+- **Tiled Texture with Hex Pattern Breakup** uses MaterialX Hex Tiled Image nodes.
+- **Triplanar Projection** uses standard MaterialX object-space projection.
+- **Triplanar with Pattern Breakup** adds a renderer-neutral MaterialX position variation.
 
-UV-based MaterialX images receive an explicit UV connection. Triplanar modes
-use object-space position and the projection node's standard `Nobject` default,
-so they do not depend on `st`.
-
-Enable **Offset Texture Per Instance** when repeated assets should not show the
-same texture placement. Author a stable `vector3` USD primvar named
-`atb_instance_offset` on each instance (or change **Instance Offset Primvar** to
-your pipeline's name). Repeating and Hex modes add its XY components after the
-shared USD Transform 2D; Triplanar modes add XYZ to object-space projection
-coordinates. Missing primvars default to `(0, 0, 0)`, so non-instanced geometry
-keeps its existing look. The generated `texture_controls` node exposes one
-shared offset multiplier for all supported material builders. Keep the primvar
-stable across frames to avoid texture swimming.
+All generated shading graphs use portable USD MaterialX nodes.
 
 ## Color management
 
@@ -222,8 +186,7 @@ different units:
 
 For Bump Only, MaterialX chains MtlX Bump after the tangent normal map. For true
 displacement, it subtracts the zero level before MtlX Displacement applies the
-scale. Native Arnold and MoonRay create their corresponding safely scaled
-scalar or vector displacement networks.
+scale.
 
 These values remain artist controls because texture pixels alone cannot
 determine the intended physical displacement. True displacement also requires

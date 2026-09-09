@@ -1,0 +1,121 @@
+{
+  "schema_version": 4,
+  "generated_at": "2026-09-09T09:38:17.667713+00:00",
+  "source_root": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures",
+  "output_root": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/.automated_texture_builder",
+  "ocio": {
+    "path": "/Users/j7s/coding/personal-biased-ocios/personal-DRTs/config-2020.ocio",
+    "sha256": "eed91e008777f5941c81cfc504c60f0d5a6c58d21f344d361fb4e839fb47af56"
+  },
+  "color_output_space": "Linear Rec.2020",
+  "texture_sets": [
+    {
+      "name": "basalt_pillar",
+      "maps": {
+        "base_color": {
+          "path": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/basalt_pillar_BaseColor.<UDIM>.png",
+          "udim": true,
+          "tiles": [
+            1001
+          ],
+          "color_space": "sRGB - Texture",
+          "lookup_space": "sRGB - Texture"
+        },
+        "specular_roughness": {
+          "path": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/basalt_pillar_Roughness.<UDIM>.png",
+          "udim": true,
+          "tiles": [
+            1001
+          ],
+          "color_space": "Raw",
+          "lookup_space": "Raw"
+        }
+      }
+    },
+    {
+      "name": "teak_crate",
+      "maps": {
+        "base_color": {
+          "path": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/teak_crate_BaseColor.<UDIM>.png",
+          "udim": true,
+          "tiles": [
+            1001
+          ],
+          "color_space": "sRGB - Texture",
+          "lookup_space": "sRGB - Texture"
+        },
+        "specular_roughness": {
+          "path": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/teak_crate_Roughness.<UDIM>.png",
+          "udim": true,
+          "tiles": [
+            1001
+          ],
+          "color_space": "Raw",
+          "lookup_space": "Raw"
+        }
+      }
+    }
+  ],
+  "textures": [
+    {
+      "source": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/basalt_pillar_BaseColor.1001.png",
+      "texture_set": "basalt_pillar",
+      "channel": "base_color",
+      "udim": 1001,
+      "source_space": "sRGB - Texture",
+      "output_space": "sRGB - Texture",
+      "source_pixel_type": "",
+      "output_pixel_type": "",
+      "skip_linearization": false,
+      "output": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/basalt_pillar_BaseColor.1001.png",
+      "status": "source_direct",
+      "before_info": {},
+      "after_info": {}
+    },
+    {
+      "source": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/basalt_pillar_Roughness.1001.png",
+      "texture_set": "basalt_pillar",
+      "channel": "specular_roughness",
+      "udim": 1001,
+      "source_space": "Raw",
+      "output_space": "Raw",
+      "source_pixel_type": "",
+      "output_pixel_type": "",
+      "skip_linearization": false,
+      "output": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/basalt_pillar_Roughness.1001.png",
+      "status": "source_direct",
+      "before_info": {},
+      "after_info": {}
+    },
+    {
+      "source": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/teak_crate_BaseColor.1001.png",
+      "texture_set": "teak_crate",
+      "channel": "base_color",
+      "udim": 1001,
+      "source_space": "sRGB - Texture",
+      "output_space": "sRGB - Texture",
+      "source_pixel_type": "",
+      "output_pixel_type": "",
+      "skip_linearization": false,
+      "output": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/teak_crate_BaseColor.1001.png",
+      "status": "source_direct",
+      "before_info": {},
+      "after_info": {}
+    },
+    {
+      "source": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/teak_crate_Roughness.1001.png",
+      "texture_set": "teak_crate",
+      "channel": "specular_roughness",
+      "udim": 1001,
+      "source_space": "Raw",
+      "output_space": "Raw",
+      "source_pixel_type": "",
+      "output_pixel_type": "",
+      "skip_linearization": false,
+      "output": "/Users/j7s/coding/automated-texture-builder/examples/labs_automated_texture_builder/textures/teak_crate_Roughness.1001.png",
+      "status": "source_direct",
+      "before_info": {},
+      "after_info": {}
+    }
+  ]
+}

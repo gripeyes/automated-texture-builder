@@ -161,7 +161,7 @@ def build() -> Path:
     )
     textures.addParmTemplate(explained(
         per_instance,
-        "Offsets each instance from a vector3 USD primvar. UV-based modes use XY; triplanar modes and MoonRay's native breakup variation use XYZ. A missing primvar resolves to zero and leaves the material unchanged.",
+        "Offsets each instance from a vector3 USD primvar. UV-based modes use XY; triplanar modes use XYZ. A missing primvar resolves to zero and leaves the material unchanged.",
     ))
     offset_primvar = hou.StringParmTemplate(
         "instance_offset_primvar", "Instance Offset Primvar", 1,
@@ -336,48 +336,20 @@ def build() -> Path:
     )
     definition.addSection(
         "Help",
-        """= Automated Texture Builder =
+        """= Labs Automated Texture Builder =
 
-Turns a texture folder into ready-to-use material subnetworks in Solaris.
+Builds visible USD MaterialX material subnetworks in Solaris from a texture folder.
 
-Quick start:
-1. Choose Source Direct, Generate / Update TX, or Existing TX.
-2. Select the texture folder.
-3. Choose the renderer material builder and surface model.
-4. Choose Automatic / UDIM or Repeating Tiled Image.
-5. Click Convert, Build and Assign.
+Choose Source Direct, Generate / Update TX, or Existing TX; then choose OpenPBR Surface or MaterialX Standard Surface. The generated graphs use only Houdini and standard MaterialX nodes.
 
-The tool groups matching textures, optionally creates render-ready TX files,
-and creates one visible material subnetwork per texture set in a sibling
-Material Library LOP. It recognizes the core PBR maps plus OpenPBR transmission,
-translucency, subsurface, fuzz, coat, thin-film, opacity, emission, normals,
-tangents and displacement.
+Automatic/UDIM, repeating UV, hex pattern breakup, triplanar, and triplanar breakup are supported. Automatic assignment binds uniquely matching texture-set and USD mesh names inside the generated Material Library.
 
-Choose OpenPBR Surface or MaterialX Standard Surface, and choose a generic,
-Karma, Arnold, native Arnold, or MoonRay material builder. UV-based textures
-get an explicit UV connection. Automatic/UDIM mode detects 1001-style tiles.
-MaterialX repeating mode adds a shared MtlX USD Transform 2D. Triplanar modes
-project textures in object space without UVs. MaterialX breakup uses a shared,
-renderer-neutral position graph. MoonRay uses its native Project Triplanar Map
-and Project Triplanar Normal Map nodes; its breakup variation exposes native
-random rotation, flip, offset, seed, scale and blend controls. No MaterialX
-nodes are inserted into a MoonRay material.
-
-Offset Texture Per Instance reads a vector3 USD primvar (by default
-atb_instance_offset). UV modes use XY; triplanar and MoonRay breakup modes use
-XYZ. Missing values are zero and do not change the material.
-
-Leave Houdini OCIO enabled unless the project requires another config. Color
-maps are converted to scene-linear; data maps and completed TX files stay Raw.
-Input bit depth is detected automatically and displacement is stored float32.
-
-Automatic USD assignment is off by default. When enabled, it fills the Assign
-to Geometry fields inside the generated Material Library. It matches exact names
-first and then tries unique partial names longest-first. Ambiguous matches are
-skipped; no separate Assign Material LOP is created.
+Houdini OCIO determines color handling. Houdini-bundled maketx and OIIO create TX files; data maps and generated TX files are read as Raw.
 """,
     )
     definition.updateFromNode(hda)
+    definition.setIcon("LOP_subnet")
+    definition.save(str(OUTPUT))
     hda.destroy()
     hou.hda.installFile(str(OUTPUT))
     return OUTPUT
