@@ -752,13 +752,29 @@ def _ensure_moonray_types(texture_mode: str) -> None:
         )
 
 
-def _moonray_connector(builder: hou.Node, name: str, label: str, parmtype: int) -> hou.Node:
-    connector = builder.createNode("subnetconnector", name + "_output")
-    connector.parm("connectorkind").set(1)
-    connector.parm("parmname").set(name)
-    connector.parm("parmlabel").set(label)
-    connector.parm("parmtype").set(parmtype)
-    return connector
+def _make_moonray_builder(
+    library: hou.Node, name: str,
+) -> tuple[hou.Node, hou.Node, hou.Node, hou.Node]:
+    """Create the same renderer-context subnet as MoonRay's shelf tool."""
+    try:
+        import moonray_material_builder
+    except ImportError as exc:
+        raise RuntimeError(
+            "The MoonRay Houdini plugin is missing moonray_material_builder.py. "
+            "Install the current MoonRay Houdini plugin before building materials."
+        ) from exc
+
+    builder = library.createNode("subnet", safe_name(name))
+    moonray_material_builder.setup_moonray_material_builder(builder)
+    builder.setName(safe_name(name), unique_name=True)
+    builder.setUserData("automated_texture_builder", "1")
+
+    surface = builder.node("dwa_base")
+    displacement = builder.node("normal_displacement")
+    output = builder.node("suboutput1")
+    if surface is None or displacement is None or output is None:
+        raise RuntimeError("MoonRay material builder setup did not create its canonical nodes")
+    return builder, surface, displacement, output
 
 
 def _moonray_image(
@@ -871,17 +887,14 @@ def _build_moonray(
     }
     for index, texture_set in enumerate(data["texture_sets"]):
         set_name = texture_set["name"]
-        builder = library.createNode("subnet", safe_name(set_name))
-        builder.setUserData("automated_texture_builder", "1")
-        builder.setMaterialFlag(True)
+        builder, surface, default_displacement, material_output = _make_moonray_builder(
+            library, set_name,
+        )
         _add_texture_controls(
             builder, texture_mode, native_moonray=True,
             offset_per_instance=offset_per_instance,
             instance_offset_scale=instance_offset_scale,
         )
-        surface = builder.createNode(MOONRAY_TYPES["base"], "dwa_base")
-        surface_output = _moonray_connector(builder, "surface", "Surface", 24)
-        _connect(surface_output, "suboutput", surface)
         maps = texture_set["maps"]
         instance_primvar = instance_offset_primvar if offset_per_instance else ""
         if "base_color" in maps:
@@ -938,24 +951,20 @@ def _build_moonray(
                 MOONRAY_TYPES["vector_displacement"], "vector_displacement",
             )
             displacement.parm("factor").set(height_scale)
-            displacement_output = _moonray_connector(builder, "displacement", "Displacement", 25)
             _connect(displacement, "vector", vector_image)
-            _connect(displacement_output, "suboutput", displacement)
+            default_displacement.destroy()
+            material_output.setInput(1, displacement, 0)
         elif displacement_channel:
             height_image = _moonray_image(
                 builder, displacement_channel + "_image", maps[displacement_channel], texture_mode,
                 instance_primvar,
             )
             height_red = builder.createNode(MOONRAY_TYPES["to_float"], displacement_channel + "_red")
-            displacement = builder.createNode(
-                MOONRAY_TYPES["displacement"], displacement_channel + "_displacement",
-            )
+            displacement = default_displacement
             displacement.parm("zero_value").set(height_zero)
             displacement.parm("height_multiplier").set(height_scale)
-            displacement_output = _moonray_connector(builder, "displacement", "Displacement", 25)
             _connect(height_red, "input", height_image)
             _connect(displacement, "height", height_red)
-            _connect(displacement_output, "suboutput", displacement)
         builder.layoutChildren()
         builder.setPosition(hou.Vector2(float(index % 4) * 4.0, -float(index // 4) * 3.0))
         material_paths[set_name] = "/materials/" + builder.name()

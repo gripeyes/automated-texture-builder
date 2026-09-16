@@ -81,6 +81,11 @@ subfolder.
 - **Arnold Material Builder** — native Arnold Standard Surface network
 - **MoonRay DwaBase** — native MoonRay material network
 
+Native MoonRay materials use the MoonRay plugin's canonical VEX material-builder
+setup: the `moonray` render context, one compact `suboutput1`, and typed
+`surface` and `displacement` outputs. Texture maps remain native MoonRay leaf
+VOPs, so an `ImageMap` connects directly to compatible DwaBase inputs.
+
 ### Surface model
 
 - **OpenPBR Surface** — recommended for Painter 12.1 OpenPBR projects and the
