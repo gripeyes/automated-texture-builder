@@ -971,6 +971,137 @@ def _build_moonray(
     return _publish_library(library, material_paths)
 
 
+
+def _build_cycles(
+    library: hou.Node, data: dict, texture_mode: str, uv_primvar: str,
+    height_scale: float, height_zero: float, detail_mode: str, bump_scale: float,
+    offset_per_instance: bool, instance_offset_primvar: str,
+    instance_offset_scale: float,
+) -> dict[str, str]:
+    if texture_mode not in {"auto", "repeat", "triplanar"}:
+        raise RuntimeError("Native Cycles supports Automatic / UDIM, Repeating Texture, and Triplanar; pattern breakup is not supported.")
+    types = ("material_builder", "principled_bsdf", "image_texture", "uvmap",
+             "texture_coordinate", "separate_color", "normal_map", "bump",
+             "displacement", "vector_displacement", "attribute", "vector_math")
+    missing = [name for name in types if hou.nodeType(hou.vopNodeTypeCategory(), "cycles::" + name + "::1.0") is None]
+    if missing:
+        raise RuntimeError("Install cycles-material_nodes.hda before building Cycles materials. Missing: " + ", ".join(missing))
+    if texture_mode == "triplanar" and any(
+        "normal" in item["maps"] or "coat_normal" in item["maps"]
+        for item in data["texture_sets"]
+    ):
+        raise RuntimeError("Cycles box projection does not reorient tangent-space normal maps. Use UV mode for normal maps, or height maps for triplanar bump.")
+    scalar = {
+        "base_metalness": "metallic", "base_diffuse_roughness": "diffuse_roughness",
+        "specular_weight": "specular_ior_level", "specular_roughness": "roughness",
+        "specular_ior": "ior", "specular_roughness_anisotropy": "anisotropic",
+        "specular_anisotropy_angle": "anisotropic_rotation",
+        "transmission_weight": "transmission_weight", "subsurface_weight": "subsurface_weight",
+        "subsurface_radius": "subsurface_scale", "subsurface_scatter_anisotropy": "subsurface_anisotropy",
+        "fuzz_weight": "sheen_weight", "fuzz_roughness": "sheen_roughness",
+        "coat_weight": "coat_weight", "coat_roughness": "coat_roughness", "coat_ior": "coat_ior",
+        "thin_film_thickness": "thin_film_thickness", "thin_film_ior": "thin_film_ior",
+        "emission_luminance": "emission_strength", "opacity": "alpha",
+    }
+    colors = {"base_color": "base_color", "specular_color": "specular_tint",
+              "subsurface_radius_scale": "subsurface_radius", "fuzz_color": "sheen_tint",
+              "coat_color": "coat_tint", "emission_color": "emission_color"}
+    clear_generated(library)
+    paths: dict[str, str] = {}
+    for index, item in enumerate(data["texture_sets"]):
+        builder = library.createNode("cycles::material_builder::1.0", safe_name(item["name"]))
+        builder.setUserData("automated_texture_builder", "1")
+        surface, output = builder.node("principled_bsdf"), builder.node("outputs")
+        _add_texture_controls(builder, texture_mode, offset_per_instance=offset_per_instance,
+                              instance_offset_scale=instance_offset_scale)
+        def native(kind, name):
+            return builder.createNode("cycles::" + kind + "::1.0", name)
+        if texture_mode == "triplanar":
+            coordinates = native("texture_coordinate", "object_coordinates")
+            coordinate_output = "out_object"
+        else:
+            coordinates = native("uvmap", "uv_coordinates")
+            coordinates.parm("attribute").set(uv_primvar)
+            coordinate_output = "out_UV"
+        if offset_per_instance and texture_mode != "auto":
+            attribute = native("attribute", "instance_offset")
+            attribute.parm("attribute").set(instance_offset_primvar)
+            scaled = native("vector_math", "instance_offset_scaled")
+            scaled.parm("math_type").set("scale")
+            _connect_output(scaled, "vector1", attribute, "out_vector")
+            _reference(scaled.parm("scale"), "atb_instance_offset_scale")
+            offset = native("vector_math", "coordinates_offset")
+            _connect_output(offset, "vector1", coordinates, coordinate_output)
+            _connect_output(offset, "vector2", scaled, "out_vector")
+            coordinates, coordinate_output = offset, "out_vector"
+        def image(channel):
+            info = item["maps"][channel]
+            node = native("image_texture", channel + "_image")
+            node.parm("filename").set(info["path"])
+            node.parm("colorspace").set(info.get("color_space", "Raw"))
+            node.parm("alpha_type").set("channel_packed")
+            node.parm("extension").set("periodic" if texture_mode != "auto" else "black")
+            tiles = info.get("tiles", [])
+            node.parm("tiles").set(len(tiles))
+            for tile_index, tile in enumerate(tiles, 1):
+                node.parm("tiles_value" + str(tile_index)).set(tile)
+            _connect_output(node, "vector", coordinates, coordinate_output)
+            if texture_mode == "triplanar":
+                node.parm("projection").set("box")
+                _reference(node.parm("projection_blend"), "atb_projection_blend")
+                for parm in node.parmTuple(hou.text.encode("tex_mapping:scale")):
+                    _reference(parm, "atb_projection_scale")
+            return node
+        def red(channel):
+            separate = native("separate_color", channel + "_red")
+            _connect_output(separate, "color", image(channel), "out_color")
+            return separate
+        for channel, input_name in scalar.items():
+            if channel in item["maps"]:
+                _connect_output(surface, input_name, red(channel), "out_r")
+        for channel, input_name in colors.items():
+            if channel in item["maps"]:
+                _connect_output(surface, input_name, image(channel), "out_color")
+        if "emission_color" in item["maps"] and "emission_luminance" not in item["maps"]:
+            surface.parm("emission_strength").set(1)
+        for channel, input_name in (("normal", "normal"), ("coat_normal", "coat_normal")):
+            if channel in item["maps"]:
+                normal = native("normal_map", channel)
+                normal.parm("attribute").set(uv_primvar)
+                _connect_output(normal, "color", image(channel), "out_color")
+                _connect_output(surface, input_name, normal, "out_normal")
+        bump_channel, displacement_channel = geometry_detail_plan(item["maps"], detail_mode)
+        if bump_channel:
+            bump = native("bump", "bump")
+            bump.parm("strength").set(bump_scale)
+            bump.parm("distance").set(height_scale)
+            _connect_output(bump, "height", red(bump_channel), "out_r")
+            if builder.node("normal"):
+                _connect_output(bump, "normal", builder.node("normal"), "out_normal")
+            _connect_output(surface, "normal", bump, "out_normal")
+        if displacement_channel:
+            displacement = builder.node("displacement")
+            if displacement_channel == "vector_displacement":
+                displacement.destroy()
+                displacement = native("vector_displacement", "displacement")
+                displacement.parm("attribute").set(uv_primvar)
+                _connect_output(displacement, "vector", image(displacement_channel), "out_color")
+            else:
+                _connect_output(displacement, "height", red(displacement_channel), "out_r")
+            displacement.parm("scale").set(height_scale)
+            displacement.parm("midlevel").set(height_zero)
+            output.setInput(1, displacement, displacement.outputIndex("out_displacement"))
+        handled = set(scalar) | set(colors) | {"normal", "coat_normal", "height", "displacement", "vector_displacement"}
+        unsupported = sorted(set(item["maps"]) - handled)
+        if unsupported:
+            message = "Cycles Principled has no direct mapping for: " + ", ".join(unsupported)
+            builder.setComment(message)
+            print(message)
+        builder.layoutChildren()
+        builder.setPosition(hou.Vector2(float(index % 4) * 4, -float(index // 4) * 3))
+        paths[item["name"]] = "/materials/" + builder.name()
+    return _publish_library(library, paths)
+
 def _replace_surface(builder: hou.Node, surface_model: str) -> hou.Node:
     old = builder.node("mtlxstandard_surface")
     if surface_model == "standard_surface":
@@ -1009,6 +1140,12 @@ def build_materials(
         return _build_arnold_native(
             library, data, texture_mode, height_scale, height_zero, detail_mode,
             bump_scale, offset_per_instance, instance_offset_primvar,
+            instance_offset_scale,
+        )
+    if profile == "cycles":
+        return _build_cycles(
+            library, data, texture_mode, uv_primvar, height_scale, height_zero,
+            detail_mode, bump_scale, offset_per_instance, instance_offset_primvar,
             instance_offset_scale,
         )
     if profile == "moonray":

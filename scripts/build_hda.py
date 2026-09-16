@@ -133,11 +133,11 @@ def build() -> Path:
     textures.addParmTemplate(hou.SeparatorParmTemplate("sep_material"))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "builder_profile", "Solaris Material Builder",
-        ("generic", "karma", "arnold", "arnold_native", "moonray"),
+        ("generic", "karma", "arnold", "arnold_native", "moonray", "cycles"),
         (
             "USD MaterialX Builder", "Karma Material Builder",
             "USD MaterialX Builder (Arnold)", "Arnold Material Builder",
-            "MoonRay DwaBase Material Builder",
+            "MoonRay DwaBase Material Builder", "Cycles Principled Material Builder",
         ),
         default_value=0,
     ), "Chooses the actual Houdini material subnet created inside the external Solaris Material Library. Native Arnold creates Arnold Standard Surface; MoonRay creates the verified DwaBase topology."))
@@ -149,11 +149,11 @@ def build() -> Path:
     )
     surface_model.setConditional(
         hou.parmCondType.DisableWhen,
-        "{ builder_profile == arnold_native } { builder_profile == moonray }",
+        "{ builder_profile == arnold_native } { builder_profile == moonray } { builder_profile == cycles }",
     )
     textures.addParmTemplate(explained(
         surface_model,
-        "Applies to the three MaterialX builder profiles. Native Arnold uses Arnold Standard Surface; MoonRay uses DwaBaseMaterial.",
+        "Applies to the three MaterialX builder profiles. Native Arnold uses Arnold Standard Surface; MoonRay uses DwaBaseMaterial; Cycles uses native Principled BSDF.",
     ))
     textures.addParmTemplate(explained(hou.MenuParmTemplate(
         "texture_mode", "Texture Mode",

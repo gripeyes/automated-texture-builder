@@ -6,7 +6,7 @@ subnetworks in Solaris.
 It finds the textures that belong together, optionally creates render-ready
 `.tx` files, creates one material subnetwork per texture set, and connects every
 recognized map to the appropriate shader input. It supports USD MaterialX,
-Karma, Arnold and MoonRay materials.
+Karma, Arnold, MoonRay and native Cycles materials.
 
 ## Quick start
 
@@ -376,3 +376,14 @@ The same conversion system can be run through Houdini's Python environment:
 ```sh
 hython -m automated_texture_builder.cli /project/textures --force
 ```
+
+## Native Cycles
+
+Install `cycles-material_nodes.hda`, then choose **Cycles Principled Material Builder**.
+Supports Automatic / UDIM, repeating UV textures, and native box triplanar projection;
+all shader nodes are native Cycles nodes. Color spaces and UDIM tile lists come from
+the texture manifest. Normal maps, bump, scalar/vector displacement, per-instance
+offsets, and compatible Principled inputs are connected automatically.
+Pattern breakup and triplanar tangent-space normal maps are rejected before replacing
+existing materials. Unmapped OpenPBR channels are listed on each material subnet.
+Displacement uses the delegate's configured displacement method (bump by default).
